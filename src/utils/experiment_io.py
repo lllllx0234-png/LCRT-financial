@@ -38,15 +38,25 @@ def create_experiment_dir(
     outputs_root: PathLike = "outputs",
     checkpoints_root: PathLike = "checkpoints",
     timestamp: Optional[datetime] = None,
+    prefix: str = "experiment",
 ) -> ExperimentPaths:
     """Create unique output, checkpoint, and figure directories for one run."""
+    normalized_prefix = prefix.strip()
+    if not normalized_prefix:
+        raise ValueError("prefix cannot be empty.")
+    if any(character in normalized_prefix for character in ("\\", "/", ":")):
+        raise ValueError("prefix cannot contain path separators or a drive marker.")
+
     outputs_directory = Path(outputs_root)
     checkpoints_directory = Path(checkpoints_root)
     outputs_directory.mkdir(parents=True, exist_ok=True)
     checkpoints_directory.mkdir(parents=True, exist_ok=True)
 
     run_time = timestamp if timestamp is not None else datetime.now()
-    base_name = "experiment_{}".format(run_time.strftime("%Y%m%d_%H%M%S"))
+    base_name = "{}_{}".format(
+        normalized_prefix,
+        run_time.strftime("%Y%m%d_%H%M%S"),
+    )
     experiment_name = _find_unique_experiment_name(
         base_name,
         outputs_directory,
