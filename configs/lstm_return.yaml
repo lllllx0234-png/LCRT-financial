@@ -1,5 +1,5 @@
 data:
-  csv_path: data/raw/sample.csv
+  csv_path: data/processed/BTC_daily_train.csv
   feature_columns:
     - Open
     - High
@@ -25,7 +25,7 @@ model:
   use_lct_riesz: true
 
 training:
-  epochs: 20
+  epochs: 5
   learning_rate: 0.001
   weight_decay: 0.0001
   seed: 42

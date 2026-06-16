@@ -1,0 +1,27 @@
+# Python cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Experiment outputs
+outputs/*
+!outputs/.gitkeep
+
+checkpoints/*
+!checkpoints/.gitkeep
+
+# Processed data
+data/processed/*.csv
+
+# Raw large datasets
+data/raw/*.csv
+!data/raw/.gitkeep
+
+# IDE
+.vscode/*
+!.vscode/settings.json
