@@ -89,8 +89,8 @@ class FinancialDatasetTest(unittest.TestCase):
             scaled_val[DEFAULT_FEATURE_COLUMNS].mean().mean(),
         )
 
-    def test_close_return_and_log_return_sliding_windows(self) -> None:
-        """Build correctly shaped next-close, return, and log-return targets."""
+    def test_close_return_log_return_and_volatility_sliding_windows(self) -> None:
+        """Build correctly shaped close, return, log-return, and volatility targets."""
         data = load_ohlcv_csv(str(self.csv_path))
         close_x, close_y, close_dates = build_sliding_windows(
             data,
@@ -107,6 +107,11 @@ class FinancialDatasetTest(unittest.TestCase):
             sequence_length=10,
             target_type="log_return",
         )
+        volatility_x, volatility_y, volatility_dates = build_sliding_windows(
+            data,
+            sequence_length=10,
+            target_type="volatility_5",
+        )
 
         self.assertEqual(close_x.shape, (110, 10, 5))
         self.assertEqual(close_y.shape, (110, 1))
@@ -114,11 +119,23 @@ class FinancialDatasetTest(unittest.TestCase):
         self.assertEqual(return_y.shape, (110, 1))
         self.assertEqual(log_return_x.shape, (110, 10, 5))
         self.assertEqual(log_return_y.shape, (110, 1))
+        self.assertEqual(volatility_x.shape, (106, 10, 5))
+        self.assertEqual(volatility_y.shape, (106, 1))
         self.assertEqual(close_dates, return_dates)
         self.assertEqual(close_dates, log_return_dates)
+        self.assertEqual(close_dates[:106], volatility_dates)
         self.assertAlmostEqual(float(close_y[0, 0]), 110.0)
         self.assertAlmostEqual(float(return_y[0, 0]), 110.0 / 109.0 - 1.0)
         self.assertAlmostEqual(float(log_return_y[0, 0]), np.log(110.0 / 109.0))
+        expected_volatility = np.std(
+            np.log(
+                np.array([110.0, 111.0, 112.0, 113.0, 114.0])
+                / np.array([109.0, 110.0, 111.0, 112.0, 113.0])
+            ),
+            ddof=0,
+        )
+        self.assertAlmostEqual(float(volatility_y[0, 0]), expected_volatility)
+        self.assertTrue(np.all(volatility_y >= 0.0))
 
     def test_log_return_rejects_non_positive_close(self) -> None:
         """Reject log-return targets when either close value is non-positive."""
@@ -131,8 +148,19 @@ class FinancialDatasetTest(unittest.TestCase):
                 target_type="log_return",
             )
 
+    def test_volatility_rejects_non_positive_close(self) -> None:
+        """Reject volatility targets when any close value is non-positive."""
+        data = load_ohlcv_csv(str(self.csv_path))
+        data.loc[0, "Close"] = -1.0
+        with self.assertRaisesRegex(ValueError, "Close values must be positive"):
+            build_sliding_windows(
+                data,
+                sequence_length=10,
+                target_type="volatility_5",
+            )
+
     def test_create_dataloaders_batch_shapes_and_targets(self) -> None:
-        """Create chronological close, return, and log-return data-loader pipelines."""
+        """Create chronological close, return, log-return, and volatility loaders."""
         close_bundle = create_dataloaders(
             str(self.csv_path),
             sequence_length=10,
@@ -205,6 +233,34 @@ class FinancialDatasetTest(unittest.TestCase):
             "log_return",
         )
         self.assertTrue(torch.isfinite(log_return_y).all())
+
+        volatility_bundle = create_dataloaders(
+            str(self.csv_path),
+            sequence_length=10,
+            batch_size=4,
+            target_type="volatility_5",
+        )
+        volatility_x, volatility_y = next(iter(volatility_bundle.train_loader))
+        self.assertEqual(tuple(volatility_x.shape), (4, 10, 5))
+        self.assertEqual(tuple(volatility_y.shape), (4, 1))
+        self.assertIsNone(volatility_bundle.target_scaler)
+        self.assertFalse(
+            volatility_bundle.preprocessing_config["target_scaler_enabled"]
+        )
+        self.assertEqual(
+            volatility_bundle.preprocessing_config["target_type"],
+            "volatility_5",
+        )
+        self.assertTrue(torch.isfinite(volatility_y).all())
+        self.assertTrue((volatility_y >= 0.0).all())
+        self.assertEqual(
+            (
+                len(volatility_bundle.train_dataset),
+                len(volatility_bundle.val_dataset),
+                len(volatility_bundle.test_dataset),
+            ),
+            (70, 4, 4),
+        )
 
 
 if __name__ == "__main__":

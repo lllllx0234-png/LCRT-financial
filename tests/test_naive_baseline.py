@@ -172,6 +172,66 @@ class NaiveBaselineTest(unittest.TestCase):
             self.assertEqual(log_return_rows[0]["naive_rule"], "zero_log_return")
             self.assertEqual(log_return_rows[0]["target_type"], "log_return")
 
+    def test_volatility_naive_uses_historical_volatility(self) -> None:
+        """Volatility baseline should predict historical five-day log-return std."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            csv_path = root / "data" / "raw" / "sample.csv"
+            csv_path.parent.mkdir(parents=True)
+            self._write_ohlcv_csv(csv_path)
+            config_path = self._write_config(
+                root,
+                csv_path,
+                target_type="volatility_5",
+            )
+
+            paths = run_naive_baseline(config_path)
+
+            self.assertIn("naive_historical_volatility_5", paths.experiment_dir.name)
+            self.assertTrue(paths.metrics_path.is_file())
+            self.assertTrue(paths.prediction_results_path.is_file())
+            self.assertTrue((paths.figures_dir / "prediction_curve.png").is_file())
+
+            with paths.prediction_results_path.open(
+                "r",
+                newline="",
+                encoding="utf-8-sig",
+            ) as file:
+                rows = list(csv.DictReader(file))
+            expected_true, expected_pred = self._expected_volatility_values()
+            self.assertEqual(len(rows), len(expected_true))
+            self.assertAlmostEqual(float(rows[0]["y_true"]), expected_true[0])
+            self.assertAlmostEqual(float(rows[0]["y_pred"]), expected_pred[0])
+            self.assertTrue(all(float(row["y_true"]) >= 0.0 for row in rows))
+            self.assertTrue(all(float(row["y_pred"]) >= 0.0 for row in rows))
+
+            saved_config = json.loads(paths.config_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                saved_config["experiment"]["name"],
+                "naive_historical_volatility_5",
+            )
+            self.assertEqual(saved_config["model"]["type"], "naive")
+            self.assertEqual(saved_config["naive_rule"], "historical_volatility_5")
+
+            metrics = json.loads(paths.metrics_path.read_text(encoding="utf-8"))
+            self.assertIsNone(metrics["directional_accuracy"])
+
+            index_path = root / "outputs" / "experiment_index.csv"
+            self.assertTrue(index_path.is_file())
+            with index_path.open("r", newline="", encoding="utf-8-sig") as file:
+                index_rows = list(csv.DictReader(file))
+            volatility_rows = [
+                row for row in index_rows
+                if row["run_dir"] == str(paths.experiment_dir)
+            ]
+            self.assertEqual(len(volatility_rows), 1)
+            self.assertEqual(volatility_rows[0]["model_type"], "naive")
+            self.assertEqual(
+                volatility_rows[0]["naive_rule"],
+                "historical_volatility_5",
+            )
+            self.assertEqual(volatility_rows[0]["target_type"], "volatility_5")
+
     @staticmethod
     def _write_config(root: Path, csv_path: Path, target_type: str) -> Path:
         """Write a small config using temporary output/checkpoint roots."""
@@ -248,6 +308,26 @@ class NaiveBaselineTest(unittest.TestCase):
         test_close = close[102:]
         y_true = test_close[10:].tolist()
         y_pred = test_close[9:-1].tolist()
+        return y_true, y_pred
+
+    @staticmethod
+    def _expected_volatility_values() -> tuple[list[float], list[float]]:
+        """Return expected future and historical volatility values."""
+        close = 100.0 + np.arange(120, dtype=np.float64)
+        test_close = close[102:]
+        y_true = []
+        y_pred = []
+        for target_index in range(10, len(test_close) - 4):
+            future_log_returns = np.log(
+                test_close[target_index : target_index + 5]
+                / test_close[target_index - 1 : target_index + 4]
+            )
+            historical_log_returns = np.log(
+                test_close[target_index - 5 : target_index]
+                / test_close[target_index - 6 : target_index - 1]
+            )
+            y_true.append(float(np.std(future_log_returns, ddof=0)))
+            y_pred.append(float(np.std(historical_log_returns, ddof=0)))
         return y_true, y_pred
 
 

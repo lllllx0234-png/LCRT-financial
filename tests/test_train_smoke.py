@@ -303,6 +303,99 @@ class TrainSmokeTest(unittest.TestCase):
                 "log_return_smoke_test",
             )
 
+    def test_volatility_training_generates_non_directional_metrics(self) -> None:
+        """Train volatility_5 prediction and leave directional accuracy empty."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            csv_path = root / "data" / "raw" / "sample.csv"
+            csv_path.parent.mkdir(parents=True)
+            self._write_ohlcv_csv(csv_path)
+
+            outputs_root = root / "outputs"
+            checkpoints_root = root / "checkpoints"
+            config_path = root / "volatility_smoke_config.yaml"
+            config = {
+                "data": {
+                    "csv_path": str(csv_path),
+                    "feature_columns": [
+                        "Open",
+                        "High",
+                        "Low",
+                        "Close",
+                        "Volume",
+                    ],
+                    "target_type": "volatility_5",
+                    "sequence_length": 10,
+                    "train_ratio": 0.7,
+                    "val_ratio": 0.15,
+                    "test_ratio": 0.15,
+                    "batch_size": 4,
+                    "num_workers": 0,
+                },
+                "model": {
+                    "input_dim": 5,
+                    "hidden_dim": 8,
+                    "lstm_hidden_dim": 16,
+                    "num_layers": 1,
+                    "output_dim": 1,
+                    "dropout": 0.0,
+                    "bidirectional": False,
+                    "use_lct_riesz": True,
+                    "lct_gate_init": 1.0,
+                },
+                "training": {
+                    "epochs": 2,
+                    "learning_rate": 0.001,
+                    "weight_decay": 0.0001,
+                    "seed": 42,
+                    "device": "cpu",
+                },
+                "experiment": {
+                    "name": "volatility_5_smoke_test",
+                    "save_outputs": True,
+                    "outputs_root": str(outputs_root),
+                    "checkpoints_root": str(checkpoints_root),
+                },
+            }
+            config_path.write_text(
+                yaml.safe_dump(config, sort_keys=False),
+                encoding="utf-8",
+            )
+
+            paths = main(config_path)
+
+            self.assertTrue(paths.metrics_path.is_file())
+            self.assertTrue(paths.prediction_results_path.is_file())
+            self.assertTrue((paths.figures_dir / "prediction_curve.png").is_file())
+            self.assertIn("volatility_5_smoke_test", paths.experiment_dir.name)
+
+            metrics = json.loads(paths.metrics_path.read_text(encoding="utf-8"))
+            self.assertIsNone(metrics["directional_accuracy"])
+
+            with paths.prediction_results_path.open(
+                "r",
+                newline="",
+                encoding="utf-8-sig",
+            ) as file:
+                rows = list(csv.DictReader(file))
+            y_true_values = [float(row["y_true"]) for row in rows]
+            self.assertTrue(all(value >= 0.0 for value in y_true_values))
+
+            index_path = outputs_root / "experiment_index.csv"
+            self.assertTrue(index_path.is_file())
+            with index_path.open("r", newline="", encoding="utf-8-sig") as file:
+                index_rows = list(csv.DictReader(file))
+            volatility_rows = [
+                row for row in index_rows
+                if row["run_dir"] == str(paths.experiment_dir)
+            ]
+            self.assertEqual(len(volatility_rows), 1)
+            self.assertEqual(volatility_rows[0]["target_type"], "volatility_5")
+            self.assertEqual(
+                volatility_rows[0]["experiment_name"],
+                "volatility_5_smoke_test",
+            )
+
     @staticmethod
     def _write_ohlcv_csv(csv_path: Path) -> None:
         """Write a deterministic 120-row OHLCV series for smoke training."""

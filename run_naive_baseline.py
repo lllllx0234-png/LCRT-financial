@@ -52,11 +52,20 @@ def build_naive_predictions(config: Dict[str, Any]) -> Tuple[np.ndarray, np.ndar
         raise ValueError(
             "Test split length must be greater than sequence_length."
         )
+    if target_type == "volatility_5" and len(raw_test) <= sequence_length + 4:
+        raise ValueError(
+            "Test split length must be greater than sequence_length + 4."
+        )
 
     close_values = raw_test["Close"].to_numpy(dtype=np.float64)
+    if target_type == "volatility_5" and np.any(close_values <= 0.0):
+        raise ValueError(
+            "Cannot calculate volatility_5 because Close values must be positive."
+        )
     y_true = []
     y_pred = []
-    for target_index in range(sequence_length, len(raw_test)):
+    target_end = len(raw_test) - 4 if target_type == "volatility_5" else len(raw_test)
+    for target_index in range(sequence_length, target_end):
         if target_type == "close":
             # Tomorrow close ~= today's close, using raw prices from the test split.
             y_true.append(close_values[target_index])
@@ -76,8 +85,25 @@ def build_naive_predictions(config: Dict[str, Any]) -> Tuple[np.ndarray, np.ndar
                 )
             y_true.append(np.log(current_close / previous_close))
             y_pred.append(0.0)
+        elif target_type == "volatility_5":
+            future_current = close_values[target_index : target_index + 5]
+            future_previous = close_values[target_index - 1 : target_index + 4]
+            historical_current = close_values[target_index - 5 : target_index]
+            historical_previous = close_values[target_index - 6 : target_index - 1]
+            if historical_previous.shape[0] != 5 or np.any(historical_previous <= 0.0):
+                raise ValueError(
+                    "Cannot calculate historical_volatility_5 without five positive past closes."
+                )
+            future_log_returns = np.log(future_current / future_previous)
+            historical_log_returns = np.log(
+                historical_current / historical_previous
+            )
+            y_true.append(float(np.std(future_log_returns, ddof=0)))
+            y_pred.append(float(np.std(historical_log_returns, ddof=0)))
         else:
-            raise ValueError("target_type must be 'close', 'return', or 'log_return'.")
+            raise ValueError(
+                "target_type must be 'close', 'return', 'log_return', or 'volatility_5'."
+            )
 
     return (
         np.asarray(y_true, dtype=np.float64),
@@ -105,7 +131,15 @@ def _naive_metadata(target_type: str) -> Dict[str, str]:
             "naive_rule": "zero_log_return",
             "prediction_rule": "next log_return = 0",
         }
-    raise ValueError("target_type must be 'close', 'return', or 'log_return'.")
+    if target_type == "volatility_5":
+        return {
+            "experiment_name": "naive_historical_volatility_5",
+            "naive_rule": "historical_volatility_5",
+            "prediction_rule": "future volatility_5 = historical volatility_5",
+        }
+    raise ValueError(
+        "target_type must be 'close', 'return', 'log_return', or 'volatility_5'."
+    )
 
 
 def run_naive_baseline(

@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader, Dataset
 
 DEFAULT_FEATURE_COLUMNS = ["Open", "High", "Low", "Close", "Volume"]
 REQUIRED_OHLCV_COLUMNS = ["Date", "Open", "High", "Low", "Close", "Volume"]
-VALID_TARGET_TYPES = {"close", "return", "log_return"}
+VALID_TARGET_TYPES = {"close", "return", "log_return", "volatility_5"}
 
 
 class FinancialTimeSeriesDataset(Dataset):
@@ -172,7 +172,7 @@ def build_sliding_windows(
     target_type: str = "close",
     target_close: Optional[Sequence[float]] = None,
 ) -> Tuple[np.ndarray, np.ndarray, List[pd.Timestamp]]:
-    """Construct one-step-ahead windows from one chronological data split."""
+    """Construct forecasting windows from one chronological data split."""
     selected_features = _validate_feature_columns(feature_columns)
     _validate_target_type(target_type)
     if sequence_length <= 0:
@@ -180,6 +180,10 @@ def build_sliding_windows(
     if len(data) <= sequence_length:
         raise ValueError(
             "data length must be greater than sequence_length for one-step targets."
+        )
+    if target_type == "volatility_5" and len(data) <= sequence_length + 4:
+        raise ValueError(
+            "data length must be greater than sequence_length + 4 for volatility_5."
         )
     if "Date" not in data.columns:
         raise ValueError("data must contain a Date column.")
@@ -191,11 +195,16 @@ def build_sliding_windows(
         close_values = np.asarray(target_close, dtype=np.float64)
         if close_values.shape != (len(data),):
             raise ValueError("target_close must contain one value per data row.")
+    if target_type == "volatility_5" and np.any(close_values <= 0.0):
+        raise ValueError(
+            "Cannot calculate volatility_5 because Close values must be positive."
+        )
 
     windows = []
     targets = []
     target_dates = []
-    for target_index in range(sequence_length, len(data)):
+    target_end = len(data) - 4 if target_type == "volatility_5" else len(data)
+    for target_index in range(sequence_length, target_end):
         windows.append(feature_values[target_index - sequence_length : target_index])
         if target_type == "close":
             target = close_values[target_index]
@@ -204,7 +213,7 @@ def build_sliding_windows(
             if previous_close == 0.0:
                 raise ValueError("Cannot calculate return from a zero previous Close.")
             target = close_values[target_index] / previous_close - 1.0
-        else:
+        elif target_type == "log_return":
             previous_close = close_values[target_index - 1]
             current_close = close_values[target_index]
             if previous_close <= 0.0 or current_close <= 0.0:
@@ -212,6 +221,12 @@ def build_sliding_windows(
                     "Cannot calculate log_return because Close values must be positive."
                 )
             target = np.log(current_close / previous_close)
+        else:
+            # Future realized volatility uses only future closes for y, never for X.
+            current_closes = close_values[target_index : target_index + 5]
+            previous_closes = close_values[target_index - 1 : target_index + 4]
+            future_log_returns = np.log(current_closes / previous_closes)
+            target = float(np.std(future_log_returns, ddof=0))
         targets.append([target])
         target_dates.append(pd.Timestamp(data.iloc[target_index]["Date"]))
 
