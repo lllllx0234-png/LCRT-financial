@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader, Dataset
 
 DEFAULT_FEATURE_COLUMNS = ["Open", "High", "Low", "Close", "Volume"]
 REQUIRED_OHLCV_COLUMNS = ["Date", "Open", "High", "Low", "Close", "Volume"]
-VALID_TARGET_TYPES = {"close", "return"}
+VALID_TARGET_TYPES = {"close", "return", "log_return"}
 
 
 class FinancialTimeSeriesDataset(Dataset):
@@ -199,11 +199,19 @@ def build_sliding_windows(
         windows.append(feature_values[target_index - sequence_length : target_index])
         if target_type == "close":
             target = close_values[target_index]
-        else:
+        elif target_type == "return":
             previous_close = close_values[target_index - 1]
             if previous_close == 0.0:
                 raise ValueError("Cannot calculate return from a zero previous Close.")
             target = close_values[target_index] / previous_close - 1.0
+        else:
+            previous_close = close_values[target_index - 1]
+            current_close = close_values[target_index]
+            if previous_close <= 0.0 or current_close <= 0.0:
+                raise ValueError(
+                    "Cannot calculate log_return because Close values must be positive."
+                )
+            target = np.log(current_close / previous_close)
         targets.append([target])
         target_dates.append(pd.Timestamp(data.iloc[target_index]["Date"]))
 

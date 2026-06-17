@@ -124,7 +124,10 @@ def run_evaluation(
         target_scaler=data_bundle.target_scaler,
     )
 
-    include_directional_accuracy = str(data_config["target_type"]) == "return"
+    include_directional_accuracy = str(data_config["target_type"]) in {
+        "return",
+        "log_return",
+    }
     metrics = calculate_all_metrics(
         y_true,
         y_pred,

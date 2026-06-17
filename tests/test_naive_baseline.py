@@ -121,6 +121,57 @@ class NaiveBaselineTest(unittest.TestCase):
             self.assertEqual(return_rows[0]["model_type"], "naive")
             self.assertEqual(return_rows[0]["naive_rule"], "zero_return")
 
+    def test_log_return_naive_predicts_zero(self) -> None:
+        """Log-return baseline should output exactly zero and label itself clearly."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            csv_path = root / "data" / "raw" / "sample.csv"
+            csv_path.parent.mkdir(parents=True)
+            self._write_ohlcv_csv(csv_path)
+            config_path = self._write_config(
+                root,
+                csv_path,
+                target_type="log_return",
+            )
+
+            paths = run_naive_baseline(config_path)
+
+            self.assertIn("naive_zero_log_return", paths.experiment_dir.name)
+            self.assertTrue(paths.metrics_path.is_file())
+            self.assertTrue(paths.prediction_results_path.is_file())
+            self.assertTrue((paths.figures_dir / "prediction_curve.png").is_file())
+            with paths.prediction_results_path.open(
+                "r",
+                newline="",
+                encoding="utf-8-sig",
+            ) as file:
+                rows = list(csv.DictReader(file))
+            self.assertTrue(all(float(row["y_pred"]) == 0.0 for row in rows))
+
+            saved_config = json.loads(paths.config_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                saved_config["experiment"]["name"],
+                "naive_zero_log_return",
+            )
+            self.assertEqual(saved_config["model"]["type"], "naive")
+            self.assertEqual(saved_config["naive_rule"], "zero_log_return")
+
+            metrics = json.loads(paths.metrics_path.read_text(encoding="utf-8"))
+            self.assertIsNotNone(metrics["directional_accuracy"])
+
+            index_path = root / "outputs" / "experiment_index.csv"
+            self.assertTrue(index_path.is_file())
+            with index_path.open("r", newline="", encoding="utf-8-sig") as file:
+                index_rows = list(csv.DictReader(file))
+            log_return_rows = [
+                row for row in index_rows
+                if row["run_dir"] == str(paths.experiment_dir)
+            ]
+            self.assertEqual(len(log_return_rows), 1)
+            self.assertEqual(log_return_rows[0]["model_type"], "naive")
+            self.assertEqual(log_return_rows[0]["naive_rule"], "zero_log_return")
+            self.assertEqual(log_return_rows[0]["target_type"], "log_return")
+
     @staticmethod
     def _write_config(root: Path, csv_path: Path, target_type: str) -> Path:
         """Write a small config using temporary output/checkpoint roots."""

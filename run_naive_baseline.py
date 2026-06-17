@@ -67,8 +67,17 @@ def build_naive_predictions(config: Dict[str, Any]) -> Tuple[np.ndarray, np.ndar
                 raise ValueError("Cannot calculate return from a zero previous Close.")
             y_true.append(close_values[target_index] / previous_close - 1.0)
             y_pred.append(0.0)
+        elif target_type == "log_return":
+            previous_close = close_values[target_index - 1]
+            current_close = close_values[target_index]
+            if previous_close <= 0.0 or current_close <= 0.0:
+                raise ValueError(
+                    "Cannot calculate log_return because Close values must be positive."
+                )
+            y_true.append(np.log(current_close / previous_close))
+            y_pred.append(0.0)
         else:
-            raise ValueError("target_type must be 'close' or 'return'.")
+            raise ValueError("target_type must be 'close', 'return', or 'log_return'.")
 
     return (
         np.asarray(y_true, dtype=np.float64),
@@ -90,7 +99,13 @@ def _naive_metadata(target_type: str) -> Dict[str, str]:
             "naive_rule": "zero_return",
             "prediction_rule": "next return = 0",
         }
-    raise ValueError("target_type must be 'close' or 'return'.")
+    if target_type == "log_return":
+        return {
+            "experiment_name": "naive_zero_log_return",
+            "naive_rule": "zero_log_return",
+            "prediction_rule": "next log_return = 0",
+        }
+    raise ValueError("target_type must be 'close', 'return', or 'log_return'.")
 
 
 def run_naive_baseline(
@@ -104,7 +119,7 @@ def run_naive_baseline(
     metadata = _naive_metadata(target_type)
 
     y_true, y_pred = build_naive_predictions(config)
-    include_directional_accuracy = target_type == "return"
+    include_directional_accuracy = target_type in {"return", "log_return"}
     metrics = calculate_all_metrics(
         y_true,
         y_pred,
@@ -127,7 +142,7 @@ def run_naive_baseline(
     saved_config["runtime"] = {
         "baseline": "naive",
         "torch_version": torch.__version__,
-        "target_scale": "raw_close" if target_type == "close" else "return",
+        "target_scale": "raw_close" if target_type == "close" else target_type,
     }
     save_config(saved_config, paths.config_path)
     save_metrics(metrics, paths.metrics_path)

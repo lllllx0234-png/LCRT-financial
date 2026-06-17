@@ -218,6 +218,91 @@ class TrainSmokeTest(unittest.TestCase):
             self.assertIsNone(metrics["directional_accuracy"])
             self.assertGreater(metrics["mae"], 1.0)
 
+    def test_log_return_training_generates_directional_metrics(self) -> None:
+        """Train log-return prediction in temporary space and keep target scale."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            csv_path = root / "data" / "raw" / "sample.csv"
+            csv_path.parent.mkdir(parents=True)
+            self._write_ohlcv_csv(csv_path)
+
+            outputs_root = root / "outputs"
+            checkpoints_root = root / "checkpoints"
+            config_path = root / "log_return_smoke_config.yaml"
+            config = {
+                "data": {
+                    "csv_path": str(csv_path),
+                    "feature_columns": [
+                        "Open",
+                        "High",
+                        "Low",
+                        "Close",
+                        "Volume",
+                    ],
+                    "target_type": "log_return",
+                    "sequence_length": 10,
+                    "train_ratio": 0.7,
+                    "val_ratio": 0.15,
+                    "test_ratio": 0.15,
+                    "batch_size": 8,
+                    "num_workers": 0,
+                },
+                "model": {
+                    "input_dim": 5,
+                    "hidden_dim": 8,
+                    "lstm_hidden_dim": 16,
+                    "num_layers": 1,
+                    "output_dim": 1,
+                    "dropout": 0.0,
+                    "bidirectional": False,
+                    "use_lct_riesz": True,
+                    "lct_gate_init": 1.0,
+                },
+                "training": {
+                    "epochs": 2,
+                    "learning_rate": 0.001,
+                    "weight_decay": 0.0001,
+                    "seed": 42,
+                    "device": "cpu",
+                },
+                "experiment": {
+                    "name": "log_return_smoke_test",
+                    "save_outputs": True,
+                    "outputs_root": str(outputs_root),
+                    "checkpoints_root": str(checkpoints_root),
+                },
+            }
+            config_path.write_text(
+                yaml.safe_dump(config, sort_keys=False),
+                encoding="utf-8",
+            )
+
+            paths = main(config_path)
+
+            self.assertTrue(paths.metrics_path.is_file())
+            self.assertTrue(paths.prediction_results_path.is_file())
+            self.assertTrue((paths.figures_dir / "prediction_curve.png").is_file())
+            self.assertIn("log_return_smoke_test", paths.experiment_dir.name)
+
+            metrics = json.loads(paths.metrics_path.read_text(encoding="utf-8"))
+            self.assertIn("directional_accuracy", metrics)
+            self.assertIsNotNone(metrics["directional_accuracy"])
+
+            index_path = outputs_root / "experiment_index.csv"
+            self.assertTrue(index_path.is_file())
+            with index_path.open("r", newline="", encoding="utf-8-sig") as file:
+                index_rows = list(csv.DictReader(file))
+            log_return_rows = [
+                row for row in index_rows
+                if row["run_dir"] == str(paths.experiment_dir)
+            ]
+            self.assertEqual(len(log_return_rows), 1)
+            self.assertEqual(log_return_rows[0]["target_type"], "log_return")
+            self.assertEqual(
+                log_return_rows[0]["experiment_name"],
+                "log_return_smoke_test",
+            )
+
     @staticmethod
     def _write_ohlcv_csv(csv_path: Path) -> None:
         """Write a deterministic 120-row OHLCV series for smoke training."""
