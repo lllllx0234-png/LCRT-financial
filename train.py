@@ -146,6 +146,7 @@ def collect_predictions(
     model: nn.Module,
     loader: DataLoader,
     device: torch.device,
+    target_scaler: Any = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Collect flattened true and predicted values from a DataLoader."""
     model.eval()
@@ -160,10 +161,16 @@ def collect_predictions(
 
     if not true_batches:
         raise ValueError("Prediction DataLoader contains no samples.")
-    return (
-        np.concatenate(true_batches, axis=0).reshape(-1),
-        np.concatenate(predicted_batches, axis=0).reshape(-1),
-    )
+    y_true = np.concatenate(true_batches, axis=0).reshape(-1)
+    y_pred = np.concatenate(predicted_batches, axis=0).reshape(-1)
+    if target_scaler is not None:
+        y_true = target_scaler.inverse_transform(
+            y_true.reshape(-1, 1)
+        ).reshape(-1)
+        y_pred = target_scaler.inverse_transform(
+            y_pred.reshape(-1, 1)
+        ).reshape(-1)
+    return y_true, y_pred
 
 
 def main(
@@ -332,8 +339,14 @@ def main(
         model,
         data_bundle.test_loader,
         device,
+        target_scaler=data_bundle.target_scaler,
     )
-    metrics = calculate_all_metrics(y_true, y_pred)
+    include_directional_accuracy = str(data_config["target_type"]) == "return"
+    metrics = calculate_all_metrics(
+        y_true,
+        y_pred,
+        include_directional_accuracy=include_directional_accuracy,
+    )
     metrics["test_loss"] = test_loss
     metrics["best_val_loss"] = best_val_loss
     metrics["best_epoch"] = float(best_epoch)

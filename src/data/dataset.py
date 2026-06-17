@@ -67,6 +67,7 @@ class FinancialDataLoaders:
     val_loader: DataLoader
     test_loader: DataLoader
     scaler: StandardScaler
+    target_scaler: Optional[StandardScaler]
     preprocessing_config: Dict[str, object]
 
 
@@ -247,6 +248,10 @@ def create_dataloaders(
         raw_test,
         selected_features,
     )
+    target_scaler: Optional[StandardScaler] = None
+    if target_type == "close":
+        target_scaler = StandardScaler()
+        target_scaler.fit(raw_train[["Close"]].to_numpy(dtype=np.float64))
 
     datasets = []
     for transformed, raw in (
@@ -261,6 +266,10 @@ def create_dataloaders(
             target_type=target_type,
             target_close=raw["Close"].to_numpy(dtype=np.float64),
         )
+        if target_scaler is not None:
+            targets = target_scaler.transform(
+                targets.astype(np.float64)
+            ).astype(np.float32)
         datasets.append(
             FinancialTimeSeriesDataset(features, targets, target_dates)
         )
@@ -297,6 +306,12 @@ def create_dataloaders(
         "val_ratio": val_ratio,
         "test_ratio": test_ratio,
         "scaler": scaler.__class__.__name__,
+        "target_scaler_enabled": target_scaler is not None,
+        "target_scaler": (
+            target_scaler.__class__.__name__
+            if target_scaler is not None
+            else None
+        ),
     }
     return FinancialDataLoaders(
         train_dataset=train_dataset,
@@ -306,6 +321,7 @@ def create_dataloaders(
         val_loader=val_loader,
         test_loader=test_loader,
         scaler=scaler,
+        target_scaler=target_scaler,
         preprocessing_config=preprocessing_config,
     )
 

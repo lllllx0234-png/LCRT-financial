@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import csv
 import tempfile
 import unittest
 from pathlib import Path
@@ -88,6 +89,50 @@ class EvaluateSmokeTest(unittest.TestCase):
             "checkpoint_path is required for evaluation",
         ):
             evaluate_main(checkpoint_path=None)
+
+    def test_close_evaluation_exports_original_price_scale(self) -> None:
+        """Evaluate a close checkpoint and export predictions on raw price scale."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            csv_path = root / "data" / "raw" / "sample.csv"
+            csv_path.parent.mkdir(parents=True)
+            self._write_ohlcv_csv(csv_path)
+
+            outputs_root = root / "outputs"
+            checkpoints_root = root / "checkpoints"
+            config_path = root / "close_evaluation_smoke.yaml"
+            config = self._build_config(
+                csv_path,
+                outputs_root,
+                checkpoints_root,
+            )
+            config["data"]["target_type"] = "close"
+            config["experiment"]["name"] = "close_evaluation_smoke_test"
+            config_path.write_text(
+                yaml.safe_dump(config, sort_keys=False),
+                encoding="utf-8",
+            )
+
+            training_paths = train_main(config_path)
+            evaluation_paths = run_evaluation(
+                config_path,
+                training_paths.best_model_path,
+            )
+
+            with evaluation_paths.prediction_results_path.open(
+                "r",
+                newline="",
+                encoding="utf-8-sig",
+            ) as file:
+                rows = list(csv.DictReader(file))
+            y_true_values = [float(row["y_true"]) for row in rows]
+            self.assertGreater(min(y_true_values), 100.0)
+            self.assertGreater(max(y_true_values), 108.0)
+
+            metrics = json.loads(
+                evaluation_paths.metrics_path.read_text(encoding="utf-8")
+            )
+            self.assertIsNone(metrics["directional_accuracy"])
 
     @staticmethod
     def _build_config(

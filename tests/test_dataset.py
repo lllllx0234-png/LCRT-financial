@@ -123,6 +123,20 @@ class FinancialDatasetTest(unittest.TestCase):
 
         self.assertEqual(tuple(batch_x.shape), (8, 10, 5))
         self.assertEqual(tuple(batch_y.shape), (8, 1))
+        self.assertIsNotNone(close_bundle.target_scaler)
+        self.assertTrue(close_bundle.preprocessing_config["target_scaler_enabled"])
+        self.assertEqual(
+            close_bundle.preprocessing_config["target_scaler"],
+            "StandardScaler",
+        )
+        restored_first_target = close_bundle.target_scaler.inverse_transform(
+            close_bundle.train_dataset.targets[0].numpy().reshape(1, 1)
+        )[0, 0]
+        self.assertAlmostEqual(float(restored_first_target), 110.0, places=5)
+        self.assertLess(
+            abs(float(close_bundle.train_dataset.targets.mean())),
+            0.5,
+        )
         self.assertEqual(
             (
                 len(close_bundle.train_dataset),
@@ -149,6 +163,8 @@ class FinancialDatasetTest(unittest.TestCase):
         return_x, return_y = next(iter(return_bundle.train_loader))
         self.assertEqual(tuple(return_x.shape), (8, 10, 5))
         self.assertEqual(tuple(return_y.shape), (8, 1))
+        self.assertIsNone(return_bundle.target_scaler)
+        self.assertFalse(return_bundle.preprocessing_config["target_scaler_enabled"])
         self.assertTrue(torch.isfinite(return_y).all())
 
 

@@ -123,6 +123,85 @@ class TrainSmokeTest(unittest.TestCase):
             self.assertIn("mae", metrics)
             self.assertIn("directional_accuracy", metrics)
 
+    def test_close_target_training_exports_original_price_scale(self) -> None:
+        """Train close prediction with scaled targets and export raw-price outputs."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            csv_path = root / "data" / "raw" / "sample.csv"
+            csv_path.parent.mkdir(parents=True)
+            self._write_ohlcv_csv(csv_path)
+
+            outputs_root = root / "outputs"
+            checkpoints_root = root / "checkpoints"
+            config_path = root / "close_smoke_config.yaml"
+            config = {
+                "data": {
+                    "csv_path": str(csv_path),
+                    "feature_columns": [
+                        "Open",
+                        "High",
+                        "Low",
+                        "Close",
+                        "Volume",
+                    ],
+                    "target_type": "close",
+                    "sequence_length": 10,
+                    "train_ratio": 0.7,
+                    "val_ratio": 0.15,
+                    "test_ratio": 0.15,
+                    "batch_size": 8,
+                    "num_workers": 0,
+                },
+                "model": {
+                    "input_dim": 5,
+                    "hidden_dim": 8,
+                    "lstm_hidden_dim": 16,
+                    "num_layers": 1,
+                    "output_dim": 1,
+                    "dropout": 0.0,
+                    "bidirectional": False,
+                    "use_lct_riesz": True,
+                    "lct_gate_init": 1.0,
+                },
+                "training": {
+                    "epochs": 2,
+                    "learning_rate": 0.001,
+                    "weight_decay": 0.0001,
+                    "seed": 42,
+                    "device": "cpu",
+                },
+                "experiment": {
+                    "name": "close_smoke_test",
+                    "save_outputs": True,
+                    "outputs_root": str(outputs_root),
+                    "checkpoints_root": str(checkpoints_root),
+                },
+            }
+            config_path.write_text(
+                yaml.safe_dump(config, sort_keys=False),
+                encoding="utf-8",
+            )
+
+            paths = main(config_path)
+
+            self.assertTrue(paths.metrics_path.is_file())
+            self.assertTrue(paths.prediction_results_path.is_file())
+            self.assertTrue((paths.figures_dir / "prediction_curve.png").is_file())
+
+            with paths.prediction_results_path.open(
+                "r",
+                newline="",
+                encoding="utf-8-sig",
+            ) as file:
+                rows = list(csv.DictReader(file))
+            y_true_values = [float(row["y_true"]) for row in rows]
+            self.assertGreater(min(y_true_values), 100.0)
+            self.assertGreater(max(y_true_values), 108.0)
+
+            metrics = json.loads(paths.metrics_path.read_text(encoding="utf-8"))
+            self.assertIsNone(metrics["directional_accuracy"])
+            self.assertGreater(metrics["mae"], 1.0)
+
     @staticmethod
     def _write_ohlcv_csv(csv_path: Path) -> None:
         """Write a deterministic 120-row OHLCV series for smoke training."""

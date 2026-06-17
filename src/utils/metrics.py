@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Sequence, Tuple, Union
+from typing import Dict, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
@@ -65,20 +65,25 @@ def directional_accuracy(y_true: ArrayLike, y_pred: ArrayLike) -> float:
 def calculate_all_metrics(
     y_true: ArrayLike,
     y_pred: ArrayLike,
-) -> Dict[str, float]:
+    include_directional_accuracy: bool = True,
+) -> Dict[str, Optional[float]]:
     """Calculate all standard regression and directional metrics."""
     true_values, predicted_values = _prepare_pair(y_true, y_pred)
-    return {
+    metrics: Dict[str, Optional[float]] = {
         "mae": mae(true_values, predicted_values),
         "mse": mse(true_values, predicted_values),
         "rmse": rmse(true_values, predicted_values),
         "mape": mape(true_values, predicted_values),
         "r2": r2_score(true_values, predicted_values),
-        "directional_accuracy": directional_accuracy(
+    }
+    if include_directional_accuracy:
+        metrics["directional_accuracy"] = directional_accuracy(
             true_values,
             predicted_values,
-        ),
-    }
+        )
+    else:
+        metrics["directional_accuracy"] = None
+    return metrics
 
 
 def _prepare_pair(

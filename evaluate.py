@@ -120,9 +120,15 @@ def run_evaluation(
         model,
         data_bundle.test_loader,
         device,
+        target_scaler=data_bundle.target_scaler,
     )
 
-    metrics = calculate_all_metrics(y_true, y_pred)
+    include_directional_accuracy = str(data_config["target_type"]) == "return"
+    metrics = calculate_all_metrics(
+        y_true,
+        y_pred,
+        include_directional_accuracy=include_directional_accuracy,
+    )
     metrics["test_loss"] = test_loss
 
     paths = create_experiment_dir(
