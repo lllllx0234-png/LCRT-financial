@@ -16,6 +16,16 @@ from torch.utils.data import DataLoader, Dataset
 DEFAULT_FEATURE_COLUMNS = ["Open", "High", "Low", "Close", "Volume"]
 REQUIRED_OHLCV_COLUMNS = ["Date", "Open", "High", "Low", "Close", "Volume"]
 VALID_TARGET_TYPES = {"close", "return", "log_return", "volatility_5"}
+SUPPORTED_DERIVED_FEATURES = {
+    "log_return",
+    "abs_log_return",
+    "high_low_range",
+    "close_open_return",
+    "rolling_vol_5",
+    "rolling_vol_10",
+    "rolling_vol_20",
+    "volume_change",
+}
 
 
 class FinancialTimeSeriesDataset(Dataset):
@@ -74,13 +84,14 @@ class FinancialDataLoaders:
 def load_ohlcv_csv(
     csv_path: str,
     feature_columns: Optional[Sequence[str]] = None,
+    derived_features: Optional[Sequence[str]] = None,
 ) -> pd.DataFrame:
     """Read, validate, and chronologically sort an OHLCV CSV file."""
     path = Path(csv_path)
     if not path.is_file():
         raise FileNotFoundError("CSV file does not exist: {}".format(path))
 
-    selected_features = _validate_feature_columns(feature_columns)
+    selected_derived_features = _validate_derived_features(derived_features)
     data = pd.read_csv(path)
 
     missing_required = [
@@ -93,11 +104,10 @@ def load_ohlcv_csv(
 
     data = data.copy()
     data["Date"] = pd.to_datetime(data["Date"], errors="raise")
-    numeric_columns = sorted(set(DEFAULT_FEATURE_COLUMNS + selected_features))
-    for column in numeric_columns:
+    for column in DEFAULT_FEATURE_COLUMNS:
         data[column] = pd.to_numeric(data[column], errors="raise")
 
-    checked_columns = ["Date"] + numeric_columns
+    checked_columns = ["Date"] + DEFAULT_FEATURE_COLUMNS
     if data[checked_columns].isnull().any().any():
         missing_counts = data[checked_columns].isnull().sum()
         missing_counts = missing_counts[missing_counts > 0].to_dict()
@@ -108,7 +118,24 @@ def load_ohlcv_csv(
         duplicates = duplicated_dates.dt.strftime("%Y-%m-%d").unique().tolist()
         raise ValueError("CSV contains duplicate dates: {}".format(duplicates))
 
-    return data.sort_values("Date").reset_index(drop=True)
+    data = data.sort_values("Date").reset_index(drop=True)
+    if selected_derived_features:
+        data = _add_derived_features(data, selected_derived_features)
+
+    selected_features = _validate_feature_columns(feature_columns)
+    missing_features = [
+        column for column in selected_features if column not in data.columns
+    ]
+    if missing_features:
+        raise ValueError(
+            "Selected feature columns are unavailable: {}".format(missing_features)
+        )
+    if data[["Date"] + selected_features].isnull().any().any():
+        missing_counts = data[["Date"] + selected_features].isnull().sum()
+        missing_counts = missing_counts[missing_counts > 0].to_dict()
+        raise ValueError("CSV contains missing feature values: {}".format(missing_counts))
+
+    return data
 
 
 def chronological_split(
@@ -242,6 +269,7 @@ def create_dataloaders(
     sequence_length: int,
     batch_size: int,
     feature_columns: Optional[Sequence[str]] = None,
+    derived_features: Optional[Sequence[str]] = None,
     target_type: str = "close",
     train_ratio: float = 0.7,
     val_ratio: float = 0.15,
@@ -257,8 +285,13 @@ def create_dataloaders(
         raise ValueError("num_workers cannot be negative.")
 
     selected_features = _validate_feature_columns(feature_columns)
+    selected_derived_features = _validate_derived_features(derived_features)
     _validate_target_type(target_type)
-    raw_data = load_ohlcv_csv(csv_path, selected_features)
+    raw_data = load_ohlcv_csv(
+        csv_path,
+        feature_columns=selected_features,
+        derived_features=selected_derived_features,
+    )
     raw_train, raw_val, raw_test = chronological_split(
         raw_data,
         train_ratio=train_ratio,
@@ -323,6 +356,7 @@ def create_dataloaders(
     preprocessing_config = {
         "csv_path": str(Path(csv_path)),
         "feature_columns": list(selected_features),
+        "derived_features": list(selected_derived_features),
         "target_type": target_type,
         "sequence_length": sequence_length,
         "train_ratio": train_ratio,
@@ -365,6 +399,95 @@ def _validate_feature_columns(
     return selected
 
 
+def _validate_derived_features(
+    derived_features: Optional[Sequence[str]],
+) -> List[str]:
+    """Return a validated, duplicate-free derived feature list."""
+    selected = [] if derived_features is None else list(derived_features)
+    if len(selected) != len(set(selected)):
+        raise ValueError("derived_features cannot contain duplicates.")
+    unsupported = [
+        feature for feature in selected if feature not in SUPPORTED_DERIVED_FEATURES
+    ]
+    if unsupported:
+        raise ValueError(
+            "Unsupported derived_features: {}. Supported values are {}.".format(
+                unsupported,
+                sorted(SUPPORTED_DERIVED_FEATURES),
+            )
+        )
+    return selected
+
+
+def _add_derived_features(
+    data: pd.DataFrame,
+    derived_features: Sequence[str],
+) -> pd.DataFrame:
+    """Add current-and-past-only financial features to a sorted OHLCV frame."""
+    enriched = data.copy()
+    close = enriched["Close"].to_numpy(dtype=np.float64)
+    if any(
+        feature in derived_features
+        for feature in (
+            "log_return",
+            "abs_log_return",
+            "rolling_vol_5",
+            "rolling_vol_10",
+            "rolling_vol_20",
+        )
+    ):
+        if np.any(close <= 0.0):
+            raise ValueError(
+                "Cannot calculate derived log-return features because Close values must be positive."
+            )
+        log_returns = np.zeros(len(enriched), dtype=np.float64)
+        log_returns[1:] = np.log(close[1:] / close[:-1])
+    else:
+        log_returns = np.zeros(len(enriched), dtype=np.float64)
+
+    if "log_return" in derived_features:
+        enriched["log_return"] = log_returns
+    if "abs_log_return" in derived_features:
+        enriched["abs_log_return"] = np.abs(log_returns)
+    if "high_low_range" in derived_features:
+        if np.any(close <= 0.0):
+            raise ValueError(
+                "Cannot calculate high_low_range because Close values must be positive."
+            )
+        enriched["high_low_range"] = (
+            enriched["High"].to_numpy(dtype=np.float64)
+            - enriched["Low"].to_numpy(dtype=np.float64)
+        ) / close
+    if "close_open_return" in derived_features:
+        open_values = enriched["Open"].to_numpy(dtype=np.float64)
+        if np.any(open_values == 0.0):
+            raise ValueError(
+                "Cannot calculate close_open_return from a zero Open value."
+            )
+        enriched["close_open_return"] = close / open_values - 1.0
+    for window in (5, 10, 20):
+        feature_name = "rolling_vol_{}".format(window)
+        if feature_name in derived_features:
+            enriched[feature_name] = (
+                pd.Series(log_returns)
+                .rolling(window=window, min_periods=1)
+                .std(ddof=0)
+                .fillna(0.0)
+                .to_numpy(dtype=np.float64)
+            )
+    if "volume_change" in derived_features:
+        volume = enriched["Volume"].to_numpy(dtype=np.float64)
+        if np.any(volume[:-1] == 0.0):
+            raise ValueError(
+                "Cannot calculate volume_change from a zero previous Volume."
+            )
+        volume_change = np.zeros(len(enriched), dtype=np.float64)
+        volume_change[1:] = volume[1:] / volume[:-1] - 1.0
+        enriched["volume_change"] = volume_change
+
+    return enriched
+
+
 def _validate_target_type(target_type: str) -> None:
     """Validate the supported one-step prediction target."""
     if target_type not in VALID_TARGET_TYPES:
@@ -390,6 +513,7 @@ __all__ = [
     "DEFAULT_FEATURE_COLUMNS",
     "FinancialDataLoaders",
     "FinancialTimeSeriesDataset",
+    "SUPPORTED_DERIVED_FEATURES",
     "build_sliding_windows",
     "chronological_split",
     "create_dataloaders",

@@ -12,6 +12,7 @@ import torch
 
 from src.data.dataset import (
     DEFAULT_FEATURE_COLUMNS,
+    SUPPORTED_DERIVED_FEATURES,
     build_sliding_windows,
     chronological_split,
     create_dataloaders,
@@ -56,6 +57,57 @@ class FinancialDatasetTest(unittest.TestCase):
         self.assertEqual(len(data), 120)
         self.assertTrue(data["Date"].is_monotonic_increasing)
         self.assertEqual(data.iloc[0]["Date"], pd.Timestamp("2024-01-01"))
+
+    def test_derived_features_use_current_and_past_data_only(self) -> None:
+        """Create supported derived features without future information."""
+        derived_features = [
+            "log_return",
+            "abs_log_return",
+            "high_low_range",
+            "close_open_return",
+            "rolling_vol_5",
+            "rolling_vol_10",
+            "rolling_vol_20",
+            "volume_change",
+        ]
+        feature_columns = DEFAULT_FEATURE_COLUMNS + derived_features
+        data = load_ohlcv_csv(
+            str(self.csv_path),
+            feature_columns=feature_columns,
+            derived_features=derived_features,
+        )
+
+        self.assertTrue(set(derived_features).issubset(SUPPORTED_DERIVED_FEATURES))
+        self.assertEqual(data.iloc[0]["log_return"], 0.0)
+        self.assertEqual(data.iloc[0]["volume_change"], 0.0)
+        self.assertAlmostEqual(
+            float(data.iloc[1]["log_return"]),
+            np.log(101.0 / 100.0),
+        )
+        self.assertAlmostEqual(
+            float(data.iloc[1]["abs_log_return"]),
+            abs(np.log(101.0 / 100.0)),
+        )
+        self.assertAlmostEqual(float(data.iloc[0]["high_low_range"]), 2.0 / 100.0)
+        self.assertAlmostEqual(
+            float(data.iloc[0]["close_open_return"]),
+            100.0 / 99.5 - 1.0,
+        )
+        self.assertAlmostEqual(float(data.iloc[1]["volume_change"]), 0.01)
+
+        historical_returns = np.array([0.0, np.log(101.0 / 100.0)])
+        self.assertAlmostEqual(
+            float(data.iloc[1]["rolling_vol_5"]),
+            float(np.std(historical_returns, ddof=0)),
+        )
+
+    def test_derived_features_reject_invalid_names(self) -> None:
+        """Reject unknown derived feature names before preprocessing."""
+        with self.assertRaisesRegex(ValueError, "Unsupported derived_features"):
+            load_ohlcv_csv(
+                str(self.csv_path),
+                derived_features=["future_magic"],
+            )
 
     def test_chronological_split_and_train_only_scaler_fit(self) -> None:
         """Keep partitions ordered and fit statistics from train only."""
@@ -260,6 +312,37 @@ class FinancialDatasetTest(unittest.TestCase):
                 len(volatility_bundle.test_dataset),
             ),
             (70, 4, 4),
+        )
+
+        derived_features = [
+            "log_return",
+            "abs_log_return",
+            "high_low_range",
+            "close_open_return",
+            "rolling_vol_5",
+            "rolling_vol_10",
+            "rolling_vol_20",
+            "volume_change",
+        ]
+        feature_columns = DEFAULT_FEATURE_COLUMNS + derived_features
+        feature_bundle = create_dataloaders(
+            str(self.csv_path),
+            sequence_length=10,
+            batch_size=4,
+            feature_columns=feature_columns,
+            derived_features=derived_features,
+            target_type="volatility_5",
+        )
+        feature_x, feature_y = next(iter(feature_bundle.train_loader))
+        self.assertEqual(tuple(feature_x.shape), (4, 10, 13))
+        self.assertEqual(tuple(feature_y.shape), (4, 1))
+        self.assertEqual(
+            feature_bundle.preprocessing_config["derived_features"],
+            derived_features,
+        )
+        self.assertEqual(
+            feature_bundle.preprocessing_config["feature_columns"],
+            feature_columns,
         )
 
 

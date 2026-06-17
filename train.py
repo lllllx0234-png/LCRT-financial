@@ -218,6 +218,7 @@ def main(
         sequence_length=int(data_config["sequence_length"]),
         batch_size=int(data_config["batch_size"]),
         feature_columns=data_config.get("feature_columns"),
+        derived_features=data_config.get("derived_features"),
         target_type=str(data_config["target_type"]),
         train_ratio=float(data_config["train_ratio"]),
         val_ratio=float(data_config["val_ratio"]),

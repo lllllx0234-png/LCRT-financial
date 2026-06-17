@@ -41,6 +41,7 @@ def build_naive_predictions(config: Dict[str, Any]) -> Tuple[np.ndarray, np.ndar
     raw_data = load_ohlcv_csv(
         str(data_config["csv_path"]),
         feature_columns=data_config.get("feature_columns"),
+        derived_features=data_config.get("derived_features"),
     )
     _, _, raw_test = chronological_split(
         raw_data,
