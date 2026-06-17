@@ -52,6 +52,7 @@ class EvaluateSmokeTest(unittest.TestCase):
             self.assertTrue(
                 evaluation_paths.experiment_dir.name.startswith("evaluation_")
             )
+            self.assertIn("evaluation_smoke_test", evaluation_paths.experiment_dir.name)
             self.assertNotEqual(
                 training_paths.experiment_dir,
                 evaluation_paths.experiment_dir,
@@ -81,6 +82,21 @@ class EvaluateSmokeTest(unittest.TestCase):
             summary = evaluation_paths.summary_path.read_text(encoding="utf-8")
             self.assertIn(str(training_paths.best_model_path), summary)
             self.assertIn("checkpoint_epoch", summary)
+
+            index_path = outputs_root / "experiment_index.csv"
+            self.assertTrue(index_path.is_file())
+            with index_path.open("r", newline="", encoding="utf-8-sig") as file:
+                index_rows = list(csv.DictReader(file))
+            evaluation_rows = [
+                row for row in index_rows
+                if row["run_dir"] == str(evaluation_paths.experiment_dir)
+            ]
+            self.assertEqual(len(evaluation_rows), 1)
+            self.assertEqual(evaluation_rows[0]["prefix"], "evaluation")
+            self.assertEqual(
+                evaluation_rows[0]["experiment_name"],
+                "evaluation_smoke_test",
+            )
 
     def test_main_requires_checkpoint_path(self) -> None:
         """Reject evaluation without an explicit trained checkpoint."""

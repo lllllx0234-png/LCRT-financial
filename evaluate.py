@@ -13,6 +13,7 @@ from src.data.dataset import create_dataloaders
 from src.models.lstm_forecaster import LCTRieszLSTMForecaster
 from src.utils.experiment_io import (
     ExperimentPaths,
+    append_experiment_index,
     create_experiment_dir,
     save_experiment_summary,
     save_lct_parameters,
@@ -138,6 +139,7 @@ def run_evaluation(
             "checkpoints",
         ),
         prefix="evaluation",
+        experiment_name=experiment_config.get("name"),
     )
     save_metrics(metrics, paths.metrics_path)
     save_prediction_results(y_true, y_pred, paths.prediction_results_path)
@@ -168,6 +170,26 @@ def run_evaluation(
     plot_prediction_curve(y_true, y_pred, paths.figures_dir)
     plot_residual_distribution(y_true, y_pred, paths.figures_dir)
     plot_error_histogram(y_true, y_pred, paths.figures_dir)
+    append_experiment_index(
+        outputs_root=experiment_config.get("outputs_root", "outputs"),
+        run_dir=str(paths.experiment_dir),
+        checkpoint_dir=str(paths.checkpoint_dir),
+        prefix="evaluation",
+        experiment_name=experiment_config.get("name", "unnamed_evaluation"),
+        target_type=data_config["target_type"],
+        model_type="lct_riesz_lstm" if model.use_lct_riesz else "plain_lstm",
+        use_lct_riesz=model.use_lct_riesz,
+        epochs=training_config.get("epochs"),
+        best_epoch=checkpoint.get("epoch"),
+        rmse=metrics.get("rmse"),
+        mae=metrics.get("mae"),
+        mse=metrics.get("mse"),
+        mape=metrics.get("mape"),
+        r2=metrics.get("r2"),
+        directional_accuracy=metrics.get("directional_accuracy"),
+        best_val_loss=checkpoint_metrics.get("val_loss"),
+        test_loss=test_loss,
+    )
     return paths
 
 

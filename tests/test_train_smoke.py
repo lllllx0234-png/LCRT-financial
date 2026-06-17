@@ -108,6 +108,21 @@ class TrainSmokeTest(unittest.TestCase):
             self.assertTrue(
                 paths.checkpoint_dir.is_relative_to(checkpoints_root)
             )
+            self.assertIn("smoke_test", paths.experiment_dir.name)
+
+            index_path = outputs_root / "experiment_index.csv"
+            self.assertTrue(index_path.is_file())
+            with index_path.open("r", newline="", encoding="utf-8-sig") as file:
+                index_rows = list(csv.DictReader(file))
+            training_rows = [
+                row for row in index_rows
+                if row["run_dir"] == str(paths.experiment_dir)
+            ]
+            self.assertEqual(len(training_rows), 1)
+            self.assertEqual(training_rows[0]["experiment_name"], "smoke_test")
+            self.assertEqual(training_rows[0]["target_type"], "return")
+            self.assertEqual(training_rows[0]["model_type"], "lct_riesz_lstm")
+            self.assertEqual(training_rows[0]["use_lct_riesz"], "True")
 
             with paths.training_log_path.open(
                 "r",
@@ -187,6 +202,7 @@ class TrainSmokeTest(unittest.TestCase):
             self.assertTrue(paths.metrics_path.is_file())
             self.assertTrue(paths.prediction_results_path.is_file())
             self.assertTrue((paths.figures_dir / "prediction_curve.png").is_file())
+            self.assertIn("close_smoke_test", paths.experiment_dir.name)
 
             with paths.prediction_results_path.open(
                 "r",

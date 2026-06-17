@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -39,6 +40,7 @@ def create_experiment_dir(
     checkpoints_root: PathLike = "checkpoints",
     timestamp: Optional[datetime] = None,
     prefix: str = "experiment",
+    experiment_name: Optional[str] = None,
 ) -> ExperimentPaths:
     """Create unique output, checkpoint, and figure directories for one run."""
     normalized_prefix = prefix.strip()
@@ -57,6 +59,9 @@ def create_experiment_dir(
         normalized_prefix,
         run_time.strftime("%Y%m%d_%H%M%S"),
     )
+    safe_name = _sanitize_experiment_name(experiment_name)
+    if safe_name:
+        base_name = "{}_{}".format(base_name, safe_name)
     experiment_name = _find_unique_experiment_name(
         base_name,
         outputs_directory,
@@ -82,6 +87,52 @@ def create_experiment_dir(
         best_model_path=checkpoint_dir / "best_model.pth",
         latest_model_path=checkpoint_dir / "latest_model.pth",
     )
+
+
+EXPERIMENT_INDEX_FIELDS = [
+    "run_dir",
+    "checkpoint_dir",
+    "prefix",
+    "experiment_name",
+    "target_type",
+    "model_type",
+    "use_lct_riesz",
+    "naive_rule",
+    "epochs",
+    "best_epoch",
+    "rmse",
+    "mae",
+    "mse",
+    "mape",
+    "r2",
+    "directional_accuracy",
+    "best_val_loss",
+    "test_loss",
+    "created_at",
+]
+
+
+def append_experiment_index(
+    outputs_root: PathLike = "outputs",
+    **fields: Any,
+) -> Path:
+    """Append one run summary row to outputs/experiment_index.csv."""
+    index_path = Path(outputs_root) / "experiment_index.csv"
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    row = {field: "" for field in EXPERIMENT_INDEX_FIELDS}
+    for key, value in fields.items():
+        if key in row:
+            row[key] = _to_index_value(value)
+    if not row["created_at"]:
+        row["created_at"] = datetime.now().isoformat(timespec="seconds")
+
+    file_exists = index_path.exists()
+    with index_path.open("a", newline="", encoding="utf-8-sig") as file:
+        writer = csv.DictWriter(file, fieldnames=EXPERIMENT_INDEX_FIELDS)
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(row)
+    return index_path
 
 
 def save_config(config: Mapping[str, Any], path: PathLike) -> None:
@@ -267,6 +318,22 @@ def _find_unique_experiment_name(
     return candidate
 
 
+def _sanitize_experiment_name(
+    experiment_name: Optional[str],
+    max_length: int = 80,
+) -> str:
+    """Convert an experiment name into a compact filesystem-safe suffix."""
+    if experiment_name is None:
+        return ""
+    normalized = str(experiment_name).strip().lower()
+    if not normalized:
+        return ""
+    normalized = re.sub(r"\s+", "_", normalized)
+    normalized = re.sub(r"[^a-z0-9_-]+", "_", normalized)
+    normalized = re.sub(r"_+", "_", normalized).strip("_-")
+    return normalized[:max_length].strip("_-")
+
+
 def _prepare_parent(path: PathLike) -> Path:
     """Create a file's parent directory and return its Path object."""
     output_path = Path(path)
@@ -335,8 +402,20 @@ def _format_summary_value(value: Any) -> str:
     return str(serializable)
 
 
+def _to_index_value(value: Any) -> str:
+    """Format a value for one CSV experiment-index cell."""
+    if value is None:
+        return ""
+    serializable = _to_serializable(value)
+    if isinstance(serializable, (dict, list)):
+        return json.dumps(serializable, ensure_ascii=False)
+    return str(serializable)
+
+
 __all__ = [
+    "EXPERIMENT_INDEX_FIELDS",
     "ExperimentPaths",
+    "append_experiment_index",
     "append_training_log",
     "create_experiment_dir",
     "save_checkpoint",

@@ -17,6 +17,7 @@ from src.data.dataset import create_dataloaders
 from src.models.lstm_forecaster import LCTRieszLSTMForecaster
 from src.utils.experiment_io import (
     ExperimentPaths,
+    append_experiment_index,
     append_training_log,
     create_experiment_dir,
     save_checkpoint,
@@ -200,6 +201,7 @@ def main(
             "checkpoints_root",
             "checkpoints",
         ),
+        experiment_name=experiment_config.get("name"),
     )
 
     saved_config = copy.deepcopy(config)
@@ -385,6 +387,27 @@ def main(
             lct_parameter_history,
             paths.figures_dir,
         )
+
+    append_experiment_index(
+        outputs_root=experiment_config.get("outputs_root", "outputs"),
+        run_dir=str(paths.experiment_dir),
+        checkpoint_dir=str(paths.checkpoint_dir),
+        prefix="experiment",
+        experiment_name=experiment_config.get("name", "unnamed_experiment"),
+        target_type=data_config["target_type"],
+        model_type="lct_riesz_lstm" if model.use_lct_riesz else "plain_lstm",
+        use_lct_riesz=model.use_lct_riesz,
+        epochs=epochs,
+        best_epoch=best_epoch,
+        rmse=metrics.get("rmse"),
+        mae=metrics.get("mae"),
+        mse=metrics.get("mse"),
+        mape=metrics.get("mape"),
+        r2=metrics.get("r2"),
+        directional_accuracy=metrics.get("directional_accuracy"),
+        best_val_loss=best_val_loss,
+        test_loss=test_loss,
+    )
 
     return paths
 

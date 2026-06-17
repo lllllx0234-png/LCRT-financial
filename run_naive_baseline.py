@@ -13,6 +13,7 @@ import torch
 from src.data.dataset import chronological_split, load_ohlcv_csv
 from src.utils.experiment_io import (
     ExperimentPaths,
+    append_experiment_index,
     create_experiment_dir,
     save_config,
     save_experiment_summary,
@@ -114,6 +115,7 @@ def run_naive_baseline(
         outputs_root=experiment_config.get("outputs_root", "outputs"),
         checkpoints_root=experiment_config.get("checkpoints_root", "checkpoints"),
         prefix="naive",
+        experiment_name=metadata["experiment_name"],
     )
 
     saved_config = copy.deepcopy(config)
@@ -149,6 +151,24 @@ def run_naive_baseline(
     plot_prediction_curve(y_true, y_pred, paths.figures_dir)
     plot_residual_distribution(y_true, y_pred, paths.figures_dir)
     plot_error_histogram(y_true, y_pred, paths.figures_dir)
+    append_experiment_index(
+        outputs_root=experiment_config.get("outputs_root", "outputs"),
+        run_dir=str(paths.experiment_dir),
+        checkpoint_dir=str(paths.checkpoint_dir),
+        prefix="naive",
+        experiment_name=metadata["experiment_name"],
+        target_type=target_type,
+        model_type="naive",
+        use_lct_riesz=False,
+        naive_rule=metadata["naive_rule"],
+        epochs=config.get("training", {}).get("epochs"),
+        rmse=metrics.get("rmse"),
+        mae=metrics.get("mae"),
+        mse=metrics.get("mse"),
+        mape=metrics.get("mape"),
+        r2=metrics.get("r2"),
+        directional_accuracy=metrics.get("directional_accuracy"),
+    )
     return paths
 
 

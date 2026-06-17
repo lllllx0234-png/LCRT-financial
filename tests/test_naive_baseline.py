@@ -33,6 +33,7 @@ class NaiveBaselineTest(unittest.TestCase):
 
             paths = run_naive_baseline(config_path)
 
+            self.assertIn("naive_last_close", paths.experiment_dir.name)
             self.assertTrue(paths.metrics_path.is_file())
             self.assertTrue(paths.prediction_results_path.is_file())
             self.assertTrue((paths.figures_dir / "prediction_curve.png").is_file())
@@ -62,6 +63,18 @@ class NaiveBaselineTest(unittest.TestCase):
             self.assertIn("naive_last_close", summary)
             self.assertIn("last_close", summary)
 
+            index_path = root / "outputs" / "experiment_index.csv"
+            self.assertTrue(index_path.is_file())
+            with index_path.open("r", newline="", encoding="utf-8-sig") as file:
+                index_rows = list(csv.DictReader(file))
+            close_rows = [
+                row for row in index_rows
+                if row["run_dir"] == str(paths.experiment_dir)
+            ]
+            self.assertEqual(len(close_rows), 1)
+            self.assertEqual(close_rows[0]["model_type"], "naive")
+            self.assertEqual(close_rows[0]["naive_rule"], "last_close")
+
     def test_return_naive_predicts_zero(self) -> None:
         """Return baseline should output exactly zero for every test sample."""
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -77,6 +90,7 @@ class NaiveBaselineTest(unittest.TestCase):
 
             paths = run_naive_baseline(config_path)
 
+            self.assertIn("naive_zero_return", paths.experiment_dir.name)
             self.assertTrue(paths.metrics_path.is_file())
             self.assertTrue(paths.prediction_results_path.is_file())
             with paths.prediction_results_path.open(
@@ -94,6 +108,18 @@ class NaiveBaselineTest(unittest.TestCase):
             self.assertEqual(saved_config["experiment"]["name"], "naive_zero_return")
             self.assertEqual(saved_config["model"]["type"], "naive")
             self.assertEqual(saved_config["naive_rule"], "zero_return")
+
+            index_path = root / "outputs" / "experiment_index.csv"
+            self.assertTrue(index_path.is_file())
+            with index_path.open("r", newline="", encoding="utf-8-sig") as file:
+                index_rows = list(csv.DictReader(file))
+            return_rows = [
+                row for row in index_rows
+                if row["run_dir"] == str(paths.experiment_dir)
+            ]
+            self.assertEqual(len(return_rows), 1)
+            self.assertEqual(return_rows[0]["model_type"], "naive")
+            self.assertEqual(return_rows[0]["naive_rule"], "zero_return")
 
     @staticmethod
     def _write_config(root: Path, csv_path: Path, target_type: str) -> Path:

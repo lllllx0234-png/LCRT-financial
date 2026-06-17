@@ -14,6 +14,8 @@ import torch
 from torch import nn
 
 from src.utils.experiment_io import (
+    EXPERIMENT_INDEX_FIELDS,
+    append_experiment_index,
     append_training_log,
     create_experiment_dir,
     save_checkpoint,
@@ -67,6 +69,93 @@ class ExperimentIOTest(unittest.TestCase):
             self.paths.experiment_dir,
             second_paths.experiment_dir,
         )
+
+    def test_create_experiment_dir_appends_safe_experiment_name(self) -> None:
+        """Append a sanitized experiment name without creating unsafe paths."""
+        named_paths = create_experiment_dir(
+            outputs_root=self.outputs_root,
+            checkpoints_root=self.checkpoints_root,
+            timestamp=datetime(2026, 6, 12, 10, 30, 46),
+            prefix="experiment",
+            experiment_name="LSTM Log Return 中文 !@# LCT/Riesz",
+        )
+
+        self.assertEqual(
+            named_paths.experiment_dir.name,
+            "experiment_20260612_103046_lstm_log_return_lct_riesz",
+        )
+        self.assertNotIn(" ", named_paths.experiment_dir.name)
+        self.assertNotIn("/", named_paths.experiment_dir.name)
+        self.assertNotIn("\\", named_paths.experiment_dir.name)
+
+    def test_create_experiment_dir_keeps_duplicate_suffix_with_name(self) -> None:
+        """Avoid overwriting same-second named experiment directories."""
+        first_paths = create_experiment_dir(
+            outputs_root=self.outputs_root,
+            checkpoints_root=self.checkpoints_root,
+            timestamp=datetime(2026, 6, 12, 10, 30, 47),
+            experiment_name="lstm_log_return_lct_riesz",
+        )
+        second_paths = create_experiment_dir(
+            outputs_root=self.outputs_root,
+            checkpoints_root=self.checkpoints_root,
+            timestamp=datetime(2026, 6, 12, 10, 30, 47),
+            experiment_name="lstm_log_return_lct_riesz",
+        )
+        third_paths = create_experiment_dir(
+            outputs_root=self.outputs_root,
+            checkpoints_root=self.checkpoints_root,
+            timestamp=datetime(2026, 6, 12, 10, 30, 47),
+            experiment_name="lstm_log_return_lct_riesz",
+        )
+
+        self.assertEqual(
+            first_paths.experiment_dir.name,
+            "experiment_20260612_103047_lstm_log_return_lct_riesz",
+        )
+        self.assertEqual(
+            second_paths.experiment_dir.name,
+            "experiment_20260612_103047_lstm_log_return_lct_riesz_01",
+        )
+        self.assertEqual(
+            third_paths.experiment_dir.name,
+            "experiment_20260612_103047_lstm_log_return_lct_riesz_02",
+        )
+
+    def test_append_experiment_index_creates_and_appends_rows(self) -> None:
+        """Create an experiment index and tolerate missing optional fields."""
+        index_path = append_experiment_index(
+            outputs_root=self.outputs_root,
+            run_dir="outputs/run_a",
+            checkpoint_dir="checkpoints/run_a",
+            prefix="experiment",
+            experiment_name="run_a",
+            target_type="return",
+            model_type="lct_riesz_lstm",
+            use_lct_riesz=True,
+            epochs=2,
+            rmse=0.1,
+        )
+        append_experiment_index(
+            outputs_root=self.outputs_root,
+            run_dir="outputs/run_b",
+            prefix="naive",
+            model_type="naive",
+            naive_rule="zero_return",
+        )
+
+        with index_path.open("r", newline="", encoding="utf-8-sig") as file:
+            rows = list(csv.DictReader(file))
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(list(rows[0]), EXPERIMENT_INDEX_FIELDS)
+        self.assertEqual(rows[0]["experiment_name"], "run_a")
+        self.assertEqual(rows[0]["use_lct_riesz"], "True")
+        self.assertEqual(rows[0]["rmse"], "0.1")
+        self.assertEqual(rows[1]["model_type"], "naive")
+        self.assertEqual(rows[1]["naive_rule"], "zero_return")
+        self.assertEqual(rows[1]["checkpoint_dir"], "")
+        self.assertTrue(rows[1]["created_at"])
 
     def test_save_config_supports_utf8_and_scientific_scalars(self) -> None:
         """Save readable configuration JSON without escaping Chinese text."""
