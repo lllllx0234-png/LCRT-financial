@@ -93,13 +93,73 @@ class FinancialDatasetTest(unittest.TestCase):
             float(data.iloc[0]["close_open_return"]),
             100.0 / 99.5 - 1.0,
         )
-        self.assertAlmostEqual(float(data.iloc[1]["volume_change"]), 0.01)
+        self.assertAlmostEqual(
+            float(data.iloc[1]["volume_change"]),
+            np.log1p(1010.0) - np.log1p(1000.0),
+        )
 
         historical_returns = np.array([0.0, np.log(101.0 / 100.0)])
         self.assertAlmostEqual(
             float(data.iloc[1]["rolling_vol_5"]),
             float(np.std(historical_returns, ddof=0)),
         )
+
+    def test_volume_change_allows_zero_volume_and_uses_log1p_difference(self) -> None:
+        """Calculate finite log-volume differences when volume can be zero."""
+        data = pd.DataFrame(
+            {
+                "Date": pd.date_range("2024-01-01", periods=4, freq="D"),
+                "Open": [10.0, 11.0, 12.0, 13.0],
+                "High": [11.0, 12.0, 13.0, 14.0],
+                "Low": [9.0, 10.0, 11.0, 12.0],
+                "Close": [10.5, 11.5, 12.5, 13.5],
+                "Volume": [100.0, 0.0, 50.0, 0.0],
+            }
+        )
+        csv_path = Path(self.temp_dir.name) / "zero_volume.csv"
+        data.to_csv(csv_path, index=False)
+
+        loaded = load_ohlcv_csv(
+            str(csv_path),
+            feature_columns=["Volume", "volume_change"],
+            derived_features=["volume_change"],
+        )
+
+        expected = np.array(
+            [
+                0.0,
+                np.log1p(0.0) - np.log1p(100.0),
+                np.log1p(50.0) - np.log1p(0.0),
+                np.log1p(0.0) - np.log1p(50.0),
+            ]
+        )
+        np.testing.assert_allclose(
+            loaded["volume_change"].to_numpy(dtype=np.float64),
+            expected,
+        )
+        self.assertTrue(np.isfinite(loaded["volume_change"]).all())
+
+    def test_volume_change_rejects_negative_volume(self) -> None:
+        """Reject negative volume values for log-volume differences."""
+        data = pd.DataFrame(
+            {
+                "Date": pd.date_range("2024-01-01", periods=3, freq="D"),
+                "Open": [10.0, 11.0, 12.0],
+                "High": [11.0, 12.0, 13.0],
+                "Low": [9.0, 10.0, 11.0],
+                "Close": [10.5, 11.5, 12.5],
+                "Volume": [100.0, -1.0, 50.0],
+            }
+        )
+        csv_path = Path(self.temp_dir.name) / "negative_volume.csv"
+        data.to_csv(csv_path, index=False)
+
+        with self.assertRaisesRegex(ValueError, "Volume values must be non-negative"):
+            load_ohlcv_csv(
+                str(csv_path),
+                feature_columns=["Volume", "volume_change"],
+                derived_features=["volume_change"],
+            )
 
     def test_derived_features_reject_invalid_names(self) -> None:
         """Reject unknown derived feature names before preprocessing."""

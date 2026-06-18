@@ -477,12 +477,12 @@ def _add_derived_features(
             )
     if "volume_change" in derived_features:
         volume = enriched["Volume"].to_numpy(dtype=np.float64)
-        if np.any(volume[:-1] == 0.0):
+        if np.any(volume < 0.0):
             raise ValueError(
-                "Cannot calculate volume_change from a zero previous Volume."
+                "Cannot calculate volume_change because Volume values must be non-negative."
             )
         volume_change = np.zeros(len(enriched), dtype=np.float64)
-        volume_change[1:] = volume[1:] / volume[:-1] - 1.0
+        volume_change[1:] = np.log1p(volume[1:]) - np.log1p(volume[:-1])
         enriched["volume_change"] = volume_change
 
     return enriched
