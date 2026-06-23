@@ -108,7 +108,14 @@ class TrainSmokeTest(unittest.TestCase):
             self.assertTrue(
                 paths.checkpoint_dir.is_relative_to(checkpoints_root)
             )
-            self.assertIn("smoke_test", paths.experiment_dir.name)
+            self.assertEqual(
+                paths.experiment_dir.parent,
+                outputs_root / "archive" / "unknown",
+            )
+            self.assertRegex(
+                paths.experiment_dir.name,
+                r"^\d{8}_\d{6}(?:_\d{2})?$",
+            )
 
             index_path = outputs_root / "experiment_index.csv"
             self.assertTrue(index_path.is_file())
@@ -202,7 +209,10 @@ class TrainSmokeTest(unittest.TestCase):
             self.assertTrue(paths.metrics_path.is_file())
             self.assertTrue(paths.prediction_results_path.is_file())
             self.assertTrue((paths.figures_dir / "prediction_curve.png").is_file())
-            self.assertIn("close_smoke_test", paths.experiment_dir.name)
+            self.assertEqual(
+                paths.experiment_dir.parent,
+                outputs_root / "archive" / "unknown",
+            )
 
             with paths.prediction_results_path.open(
                 "r",
@@ -282,7 +292,10 @@ class TrainSmokeTest(unittest.TestCase):
             self.assertTrue(paths.metrics_path.is_file())
             self.assertTrue(paths.prediction_results_path.is_file())
             self.assertTrue((paths.figures_dir / "prediction_curve.png").is_file())
-            self.assertIn("log_return_smoke_test", paths.experiment_dir.name)
+            self.assertEqual(
+                paths.experiment_dir.parent,
+                outputs_root / "log_return" / "lct_riesz",
+            )
 
             metrics = json.loads(paths.metrics_path.read_text(encoding="utf-8"))
             self.assertIn("directional_accuracy", metrics)
@@ -367,7 +380,10 @@ class TrainSmokeTest(unittest.TestCase):
             self.assertTrue(paths.metrics_path.is_file())
             self.assertTrue(paths.prediction_results_path.is_file())
             self.assertTrue((paths.figures_dir / "prediction_curve.png").is_file())
-            self.assertIn("volatility_5_smoke_test", paths.experiment_dir.name)
+            self.assertEqual(
+                paths.experiment_dir.parent,
+                outputs_root / "volatility_5" / "lct_riesz",
+            )
 
             metrics = json.loads(paths.metrics_path.read_text(encoding="utf-8"))
             self.assertIsNone(metrics["directional_accuracy"])
@@ -471,7 +487,10 @@ class TrainSmokeTest(unittest.TestCase):
 
             self.assertTrue(paths.metrics_path.is_file())
             self.assertTrue(paths.prediction_results_path.is_file())
-            self.assertIn("volatility_5_features_smoke_test", paths.experiment_dir.name)
+            self.assertEqual(
+                paths.experiment_dir.parent,
+                outputs_root / "volatility_5" / "lct_riesz_features",
+            )
 
             saved_config = json.loads(paths.config_path.read_text(encoding="utf-8"))
             self.assertEqual(saved_config["model"]["input_dim"], 13)

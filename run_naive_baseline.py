@@ -166,6 +166,8 @@ def run_naive_baseline(
         checkpoints_root=experiment_config.get("checkpoints_root", "checkpoints"),
         prefix="naive",
         experiment_name=metadata["experiment_name"],
+        config=config,
+        config_path=config_path,
     )
 
     saved_config = copy.deepcopy(config)

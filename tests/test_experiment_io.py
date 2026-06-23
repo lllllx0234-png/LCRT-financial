@@ -17,6 +17,7 @@ from src.utils.experiment_io import (
     EXPERIMENT_INDEX_FIELDS,
     append_experiment_index,
     append_training_log,
+    classify_experiment_run,
     create_experiment_dir,
     save_checkpoint,
     save_config,
@@ -52,8 +53,16 @@ class ExperimentIOTest(unittest.TestCase):
         self.assertTrue(self.paths.checkpoint_dir.is_dir())
         self.assertTrue(self.paths.figures_dir.is_dir())
         self.assertEqual(
+            self.paths.experiment_dir.parent,
+            self.outputs_root / "archive" / "unknown",
+        )
+        self.assertEqual(
+            self.paths.checkpoint_dir.parent,
+            self.checkpoints_root / "archive" / "unknown",
+        )
+        self.assertEqual(
             self.paths.experiment_dir.name,
-            "experiment_20260612_103045",
+            "20260612_103045",
         )
 
         second_paths = create_experiment_dir(
@@ -63,7 +72,7 @@ class ExperimentIOTest(unittest.TestCase):
         )
         self.assertEqual(
             second_paths.experiment_dir.name,
-            "experiment_20260612_103045_01",
+            "20260612_103045_01",
         )
         self.assertNotEqual(
             self.paths.experiment_dir,
@@ -81,8 +90,12 @@ class ExperimentIOTest(unittest.TestCase):
         )
 
         self.assertEqual(
+            named_paths.experiment_dir.parent,
+            self.outputs_root / "log_return" / "lct_riesz",
+        )
+        self.assertEqual(
             named_paths.experiment_dir.name,
-            "experiment_20260612_103046_lstm_log_return_lct_riesz",
+            "20260612_103046",
         )
         self.assertNotIn(" ", named_paths.experiment_dir.name)
         self.assertNotIn("/", named_paths.experiment_dir.name)
@@ -111,16 +124,47 @@ class ExperimentIOTest(unittest.TestCase):
 
         self.assertEqual(
             first_paths.experiment_dir.name,
-            "experiment_20260612_103047_lstm_log_return_lct_riesz",
+            "20260612_103047",
         )
         self.assertEqual(
             second_paths.experiment_dir.name,
-            "experiment_20260612_103047_lstm_log_return_lct_riesz_01",
+            "20260612_103047_01",
         )
         self.assertEqual(
             third_paths.experiment_dir.name,
-            "experiment_20260612_103047_lstm_log_return_lct_riesz_02",
+            "20260612_103047_02",
         )
+
+    def test_classify_experiment_run_covers_current_research_buckets(self) -> None:
+        """Classify LCT, baseline, naive, and unknown runs into stable buckets."""
+        volatility_lct = classify_experiment_run(
+            experiment_name="lstm_volatility_5_lct_signal_features",
+        )
+        volatility_baseline = classify_experiment_run(
+            experiment_name="lstm_volatility_5_baseline_features",
+        )
+        log_return = classify_experiment_run(
+            config={
+                "data": {"target_type": "log_return"},
+                "model": {"use_lct_riesz": True},
+            },
+        )
+        naive = classify_experiment_run(
+            prefix="naive",
+            experiment_name="naive_historical_volatility_5",
+        )
+        unknown = classify_experiment_run(experiment_name="close_smoke_test")
+
+        self.assertEqual(volatility_lct.task_name, "volatility_5")
+        self.assertEqual(volatility_lct.run_type, "lct_signal_features")
+        self.assertEqual(volatility_baseline.task_name, "volatility_5")
+        self.assertEqual(volatility_baseline.run_type, "baseline_features")
+        self.assertEqual(log_return.task_name, "log_return")
+        self.assertEqual(log_return.run_type, "lct_riesz")
+        self.assertEqual(naive.task_name, "naive")
+        self.assertEqual(naive.run_type, "historical_volatility_5")
+        self.assertEqual(unknown.task_name, "archive")
+        self.assertEqual(unknown.run_type, "unknown")
 
     def test_append_experiment_index_creates_and_appends_rows(self) -> None:
         """Create an experiment index and tolerate missing optional fields."""

@@ -202,6 +202,8 @@ def main(
             "checkpoints",
         ),
         experiment_name=experiment_config.get("name"),
+        config=config,
+        config_path=config_path,
     )
 
     saved_config = copy.deepcopy(config)

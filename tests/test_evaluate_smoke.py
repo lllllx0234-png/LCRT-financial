@@ -49,10 +49,14 @@ class EvaluateSmokeTest(unittest.TestCase):
                 training_paths.best_model_path,
             )
 
-            self.assertTrue(
-                evaluation_paths.experiment_dir.name.startswith("evaluation_")
+            self.assertEqual(
+                evaluation_paths.experiment_dir.parent,
+                outputs_root / "archive" / "unknown",
             )
-            self.assertIn("evaluation_smoke_test", evaluation_paths.experiment_dir.name)
+            self.assertRegex(
+                evaluation_paths.experiment_dir.name,
+                r"^\d{8}_\d{6}(?:_\d{2})?$",
+            )
             self.assertNotEqual(
                 training_paths.experiment_dir,
                 evaluation_paths.experiment_dir,

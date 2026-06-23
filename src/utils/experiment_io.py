@@ -35,14 +35,24 @@ class ExperimentPaths:
     latest_model_path: Path
 
 
+@dataclass(frozen=True)
+class ExperimentClassification:
+    """Task and run-type labels used for hierarchical experiment storage."""
+
+    task_name: str
+    run_type: str
+
+
 def create_experiment_dir(
     outputs_root: PathLike = "outputs",
     checkpoints_root: PathLike = "checkpoints",
     timestamp: Optional[datetime] = None,
     prefix: str = "experiment",
     experiment_name: Optional[str] = None,
+    config: Optional[Mapping[str, Any]] = None,
+    config_path: Optional[PathLike] = None,
 ) -> ExperimentPaths:
-    """Create unique output, checkpoint, and figure directories for one run."""
+    """Create unique hierarchical output and checkpoint directories for one run."""
     normalized_prefix = prefix.strip()
     if not normalized_prefix:
         raise ValueError("prefix cannot be empty.")
@@ -55,21 +65,27 @@ def create_experiment_dir(
     checkpoints_directory.mkdir(parents=True, exist_ok=True)
 
     run_time = timestamp if timestamp is not None else datetime.now()
-    base_name = "{}_{}".format(
-        normalized_prefix,
-        run_time.strftime("%Y%m%d_%H%M%S"),
+    classification = classify_experiment_run(
+        prefix=normalized_prefix,
+        experiment_name=experiment_name,
+        config=config,
+        config_path=config_path,
     )
-    safe_name = _sanitize_experiment_name(experiment_name)
-    if safe_name:
-        base_name = "{}_{}".format(base_name, safe_name)
-    experiment_name = _find_unique_experiment_name(
-        base_name,
-        outputs_directory,
-        checkpoints_directory,
+    output_parent = outputs_directory / classification.task_name / classification.run_type
+    checkpoint_parent = (
+        checkpoints_directory / classification.task_name / classification.run_type
+    )
+    output_parent.mkdir(parents=True, exist_ok=True)
+    checkpoint_parent.mkdir(parents=True, exist_ok=True)
+
+    run_id = _find_unique_run_id(
+        run_time.strftime("%Y%m%d_%H%M%S"),
+        output_parent,
+        checkpoint_parent,
     )
 
-    experiment_dir = outputs_directory / experiment_name
-    checkpoint_dir = checkpoints_directory / experiment_name
+    experiment_dir = output_parent / run_id
+    checkpoint_dir = checkpoint_parent / run_id
     figures_dir = experiment_dir / "figures"
     figures_dir.mkdir(parents=True, exist_ok=False)
     checkpoint_dir.mkdir(parents=True, exist_ok=False)
@@ -133,6 +149,66 @@ def append_experiment_index(
             writer.writeheader()
         writer.writerow(row)
     return index_path
+
+
+def classify_experiment_run(
+    prefix: str = "experiment",
+    experiment_name: Optional[str] = None,
+    config: Optional[Mapping[str, Any]] = None,
+    config_path: Optional[PathLike] = None,
+) -> ExperimentClassification:
+    """Infer the task and run type for hierarchical experiment outputs."""
+    normalized_prefix = _sanitize_experiment_name(prefix)
+    safe_name = _sanitize_experiment_name(experiment_name)
+    config_stem = _sanitize_experiment_name(Path(config_path).stem if config_path else "")
+    text_parts = [normalized_prefix, safe_name, config_stem]
+
+    data_config: Mapping[str, Any] = {}
+    model_config: Mapping[str, Any] = {}
+    if isinstance(config, Mapping):
+        data_section = config.get("data", {})
+        model_section = config.get("model", {})
+        experiment_section = config.get("experiment", {})
+        if isinstance(data_section, Mapping):
+            data_config = data_section
+            text_parts.append(_sanitize_experiment_name(data_config.get("target_type")))
+        if isinstance(model_section, Mapping):
+            model_config = model_section
+        if isinstance(experiment_section, Mapping):
+            text_parts.append(_sanitize_experiment_name(experiment_section.get("name")))
+
+    inference_text = "_".join(part for part in text_parts if part)
+    target_type = str(data_config.get("target_type", "")).strip().lower()
+    use_lct_riesz = bool(model_config.get("use_lct_riesz", False))
+    has_derived_features = bool(data_config.get("derived_features"))
+
+    if normalized_prefix == "naive" or "naive" in inference_text:
+        return ExperimentClassification(
+            task_name="naive",
+            run_type=_infer_naive_run_type(inference_text, target_type),
+        )
+
+    if "volatility_5" in inference_text or target_type == "volatility_5":
+        return ExperimentClassification(
+            task_name="volatility_5",
+            run_type=_infer_model_run_type(
+                inference_text,
+                use_lct_riesz,
+                has_derived_features,
+            ),
+        )
+
+    if "log_return" in inference_text or target_type == "log_return":
+        return ExperimentClassification(
+            task_name="log_return",
+            run_type=_infer_model_run_type(
+                inference_text,
+                use_lct_riesz,
+                has_derived_features,
+            ),
+        )
+
+    return ExperimentClassification(task_name="archive", run_type="unknown")
 
 
 def save_config(config: Mapping[str, Any], path: PathLike) -> None:
@@ -302,24 +378,24 @@ def save_checkpoint(
     torch.save(checkpoint, output_path)
 
 
-def _find_unique_experiment_name(
-    base_name: str,
-    outputs_root: Path,
-    checkpoints_root: Path,
+def _find_unique_run_id(
+    base_run_id: str,
+    outputs_parent: Path,
+    checkpoints_parent: Path,
 ) -> str:
-    """Find a run name unused by both output and checkpoint roots."""
-    candidate = base_name
+    """Find a timestamp run ID unused by both output and checkpoint parents."""
+    candidate = base_run_id
     suffix = 1
-    while (outputs_root / candidate).exists() or (
-        checkpoints_root / candidate
+    while (outputs_parent / candidate).exists() or (
+        checkpoints_parent / candidate
     ).exists():
-        candidate = "{}_{:02d}".format(base_name, suffix)
+        candidate = "{}_{:02d}".format(base_run_id, suffix)
         suffix += 1
     return candidate
 
 
 def _sanitize_experiment_name(
-    experiment_name: Optional[str],
+    experiment_name: Optional[Any],
     max_length: int = 80,
 ) -> str:
     """Convert an experiment name into a compact filesystem-safe suffix."""
@@ -332,6 +408,36 @@ def _sanitize_experiment_name(
     normalized = re.sub(r"[^a-z0-9_-]+", "_", normalized)
     normalized = re.sub(r"_+", "_", normalized).strip("_-")
     return normalized[:max_length].strip("_-")
+
+
+def _infer_model_run_type(
+    inference_text: str,
+    use_lct_riesz: bool,
+    has_derived_features: bool,
+) -> str:
+    """Infer a deep model run type from names first, then model flags."""
+    for run_type in (
+        "lct_signal_features",
+        "baseline_signal_features",
+        "lct_riesz_features",
+        "baseline_features",
+        "lct_riesz",
+        "baseline",
+    ):
+        if run_type in inference_text:
+            return run_type
+    if has_derived_features or "features" in inference_text:
+        return "lct_riesz_features" if use_lct_riesz else "baseline_features"
+    return "lct_riesz" if use_lct_riesz else "baseline"
+
+
+def _infer_naive_run_type(inference_text: str, target_type: str) -> str:
+    """Infer the naive-baseline storage bucket for a target type."""
+    if "zero_log_return" in inference_text or target_type == "log_return":
+        return "zero_log_return"
+    if "historical_volatility_5" in inference_text or target_type == "volatility_5":
+        return "historical_volatility_5"
+    return "legacy"
 
 
 def _prepare_parent(path: PathLike) -> Path:
@@ -414,9 +520,11 @@ def _to_index_value(value: Any) -> str:
 
 __all__ = [
     "EXPERIMENT_INDEX_FIELDS",
+    "ExperimentClassification",
     "ExperimentPaths",
     "append_experiment_index",
     "append_training_log",
+    "classify_experiment_run",
     "create_experiment_dir",
     "save_checkpoint",
     "save_config",

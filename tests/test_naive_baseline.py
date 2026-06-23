@@ -33,7 +33,10 @@ class NaiveBaselineTest(unittest.TestCase):
 
             paths = run_naive_baseline(config_path)
 
-            self.assertIn("naive_last_close", paths.experiment_dir.name)
+            self.assertEqual(
+                paths.experiment_dir.parent,
+                root / "outputs" / "naive" / "legacy",
+            )
             self.assertTrue(paths.metrics_path.is_file())
             self.assertTrue(paths.prediction_results_path.is_file())
             self.assertTrue((paths.figures_dir / "prediction_curve.png").is_file())
@@ -90,7 +93,10 @@ class NaiveBaselineTest(unittest.TestCase):
 
             paths = run_naive_baseline(config_path)
 
-            self.assertIn("naive_zero_return", paths.experiment_dir.name)
+            self.assertEqual(
+                paths.experiment_dir.parent,
+                root / "outputs" / "naive" / "legacy",
+            )
             self.assertTrue(paths.metrics_path.is_file())
             self.assertTrue(paths.prediction_results_path.is_file())
             with paths.prediction_results_path.open(
@@ -136,7 +142,10 @@ class NaiveBaselineTest(unittest.TestCase):
 
             paths = run_naive_baseline(config_path)
 
-            self.assertIn("naive_zero_log_return", paths.experiment_dir.name)
+            self.assertEqual(
+                paths.experiment_dir.parent,
+                root / "outputs" / "naive" / "zero_log_return",
+            )
             self.assertTrue(paths.metrics_path.is_file())
             self.assertTrue(paths.prediction_results_path.is_file())
             self.assertTrue((paths.figures_dir / "prediction_curve.png").is_file())
@@ -187,7 +196,10 @@ class NaiveBaselineTest(unittest.TestCase):
 
             paths = run_naive_baseline(config_path)
 
-            self.assertIn("naive_historical_volatility_5", paths.experiment_dir.name)
+            self.assertEqual(
+                paths.experiment_dir.parent,
+                root / "outputs" / "naive" / "historical_volatility_5",
+            )
             self.assertTrue(paths.metrics_path.is_file())
             self.assertTrue(paths.prediction_results_path.is_file())
             self.assertTrue((paths.figures_dir / "prediction_curve.png").is_file())

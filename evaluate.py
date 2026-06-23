@@ -144,6 +144,8 @@ def run_evaluation(
         ),
         prefix="evaluation",
         experiment_name=experiment_config.get("name"),
+        config=config,
+        config_path=config_path,
     )
     save_metrics(metrics, paths.metrics_path)
     save_prediction_results(y_true, y_pred, paths.prediction_results_path)
