@@ -16,6 +16,7 @@ from torch.utils.data import DataLoader
 from src.data.dataset import create_dataloaders
 from src.models.dual_branch_lct_lstm import DualBranchLCTRieszLSTMForecaster
 from src.models.lstm_forecaster import LCTRieszLSTMForecaster
+from src.models.residual_lct_lstm import ResidualAuxiliaryLCTRieszLSTMForecaster
 from src.utils.experiment_io import (
     ExperimentPaths,
     append_experiment_index,
@@ -123,6 +124,33 @@ def build_model(model_config: Mapping[str, Any]) -> nn.Module:
                 else None
             ),
             fusion_gate_init=float(model_config.get("fusion_gate_init", -3.0)),
+            lct_alpha=float(model_config.get("lct_alpha", 1.0)),
+            lct_m=float(model_config.get("lct_m", 1.0)),
+            lct_q=float(model_config.get("lct_q", 0.0)),
+            riesz_gamma=float(model_config.get("riesz_gamma", 1.0)),
+            learnable_gamma=bool(model_config.get("learnable_gamma", False)),
+            lct_gate_init=float(model_config.get("lct_gate_init", 1.0)),
+        )
+
+    if model_type == "residual_auxiliary_lct_riesz_lstm":
+        return ResidualAuxiliaryLCTRieszLSTMForecaster(
+            input_dim=int(model_config["input_dim"]),
+            hidden_dim=int(model_config["hidden_dim"]),
+            lstm_hidden_dim=int(model_config["lstm_hidden_dim"]),
+            signal_feature_indices=model_config["signal_feature_indices"],
+            num_layers=int(model_config["num_layers"]),
+            output_dim=int(model_config["output_dim"]),
+            dropout=float(model_config["dropout"]),
+            bidirectional=bool(model_config["bidirectional"]),
+            use_lct_riesz=bool(model_config.get("use_lct_riesz", True)),
+            spectral_hidden_dim=(
+                int(model_config["spectral_hidden_dim"])
+                if "spectral_hidden_dim" in model_config
+                else None
+            ),
+            residual_scale_init=float(
+                model_config.get("residual_scale_init", 0.0)
+            ),
             lct_alpha=float(model_config.get("lct_alpha", 1.0)),
             lct_m=float(model_config.get("lct_m", 1.0)),
             lct_q=float(model_config.get("lct_q", 0.0)),

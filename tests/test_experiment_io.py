@@ -147,6 +147,10 @@ class ExperimentIOTest(unittest.TestCase):
             experiment_name="lstm_volatility_5_dual_branch_signal_features",
             config={"model": {"type": "dual_branch_lct_riesz_lstm"}},
         )
+        volatility_residual = classify_experiment_run(
+            experiment_name="lstm_volatility_5_residual_lct_signal_features",
+            config={"model": {"type": "residual_auxiliary_lct_riesz_lstm"}},
+        )
         log_return = classify_experiment_run(
             config={
                 "data": {"target_type": "log_return"},
@@ -167,6 +171,11 @@ class ExperimentIOTest(unittest.TestCase):
         self.assertEqual(
             volatility_dual_branch.run_type,
             "dual_branch_signal_features",
+        )
+        self.assertEqual(volatility_residual.task_name, "volatility_5")
+        self.assertEqual(
+            volatility_residual.run_type,
+            "residual_lct_signal_features",
         )
         self.assertEqual(log_return.task_name, "log_return")
         self.assertEqual(log_return.run_type, "lct_riesz")
@@ -301,6 +310,7 @@ class ExperimentIOTest(unittest.TestCase):
             "C": -1.0,
             "D": 0.0,
             "gamma": 1.0,
+            "residual_scale": 0.0,
         }
         save_lct_parameters(params, self.paths.lct_parameters_path)
 

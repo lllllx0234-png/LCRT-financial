@@ -331,6 +331,13 @@ def save_lct_parameters(params: Mapping[str, Any], path: PathLike) -> None:
         determinant=values["A"] * values["D"] - values["B"] * values["C"],
         **values
     )
+    if "residual_scale" in params:
+        residual_scale = float(_to_serializable(params["residual_scale"]))
+        content += (
+            "\nResidual auxiliary correction\n"
+            "-----------------------------\n"
+            "residual_scale = {residual_scale:.10g}\n"
+        ).format(residual_scale=residual_scale)
     _save_text(content, path)
 
 
@@ -418,6 +425,9 @@ def _infer_model_run_type(
 ) -> str:
     """Infer a deep model run type from names first, then model flags."""
     for run_type in (
+        "residual_lct_signal_features",
+        "residual_lct_features",
+        "residual_auxiliary_lct_riesz_lstm",
         "dual_branch_signal_features",
         "dual_branch_features",
         "dual_branch_lct_riesz_lstm",
