@@ -174,6 +174,7 @@ def classify_experiment_run(
             text_parts.append(_sanitize_experiment_name(data_config.get("target_type")))
         if isinstance(model_section, Mapping):
             model_config = model_section
+            text_parts.append(_sanitize_experiment_name(model_config.get("type")))
         if isinstance(experiment_section, Mapping):
             text_parts.append(_sanitize_experiment_name(experiment_section.get("name")))
 
@@ -417,6 +418,9 @@ def _infer_model_run_type(
 ) -> str:
     """Infer a deep model run type from names first, then model flags."""
     for run_type in (
+        "dual_branch_signal_features",
+        "dual_branch_features",
+        "dual_branch_lct_riesz_lstm",
         "lct_signal_features",
         "baseline_signal_features",
         "lct_riesz_features",

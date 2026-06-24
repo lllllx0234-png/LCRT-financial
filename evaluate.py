@@ -10,7 +10,6 @@ import torch
 from torch import nn
 
 from src.data.dataset import create_dataloaders
-from src.models.lstm_forecaster import LCTRieszLSTMForecaster
 from src.utils.experiment_io import (
     ExperimentPaths,
     append_experiment_index,
@@ -26,7 +25,15 @@ from src.utils.visualization import (
     plot_prediction_curve,
     plot_residual_distribution,
 )
-from train import collect_predictions, evaluate, load_config, resolve_device, set_seed
+from train import (
+    build_model,
+    collect_predictions,
+    evaluate,
+    load_config,
+    model_type_for_index,
+    resolve_device,
+    set_seed,
+)
 
 
 PathLike = Union[str, Path]
@@ -93,22 +100,7 @@ def run_evaluation(
         pin_memory=device.type == "cuda",
     )
 
-    model = LCTRieszLSTMForecaster(
-        input_dim=int(model_config["input_dim"]),
-        hidden_dim=int(model_config["hidden_dim"]),
-        lstm_hidden_dim=int(model_config["lstm_hidden_dim"]),
-        num_layers=int(model_config["num_layers"]),
-        output_dim=int(model_config["output_dim"]),
-        dropout=float(model_config["dropout"]),
-        bidirectional=bool(model_config["bidirectional"]),
-        use_lct_riesz=bool(model_config["use_lct_riesz"]),
-        lct_alpha=float(model_config.get("lct_alpha", 1.0)),
-        lct_m=float(model_config.get("lct_m", 1.0)),
-        lct_q=float(model_config.get("lct_q", 0.0)),
-        riesz_gamma=float(model_config.get("riesz_gamma", 1.0)),
-        learnable_gamma=bool(model_config.get("learnable_gamma", False)),
-        lct_gate_init=float(model_config.get("lct_gate_init", 0.0)),
-    ).to(device)
+    model = build_model(model_config).to(device)
 
     checkpoint = load_checkpoint(model, checkpoint_path, device)
     criterion = nn.MSELoss()
@@ -168,6 +160,7 @@ def run_evaluation(
         "device": str(device),
         "test_samples": len(data_bundle.test_dataset),
         "trainable_parameters": model.count_parameters(),
+        "model_type": model_type_for_index(model_config, model),
         "use_lct_riesz": model.use_lct_riesz,
         "metrics": metrics,
     }
@@ -183,7 +176,7 @@ def run_evaluation(
         prefix="evaluation",
         experiment_name=experiment_config.get("name", "unnamed_evaluation"),
         target_type=data_config["target_type"],
-        model_type="lct_riesz_lstm" if model.use_lct_riesz else "plain_lstm",
+        model_type=model_type_for_index(model_config, model),
         use_lct_riesz=model.use_lct_riesz,
         epochs=training_config.get("epochs"),
         best_epoch=checkpoint.get("epoch"),

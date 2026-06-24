@@ -14,6 +14,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from src.data.dataset import create_dataloaders
+from src.models.dual_branch_lct_lstm import DualBranchLCTRieszLSTMForecaster
 from src.models.lstm_forecaster import LCTRieszLSTMForecaster
 from src.utils.experiment_io import (
     ExperimentPaths,
@@ -82,6 +83,64 @@ def resolve_device(device_config: str) -> torch.device:
     if device.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA was requested but is not available.")
     return device
+
+
+def build_model(model_config: Mapping[str, Any]) -> nn.Module:
+    """Build the configured forecasting model while preserving legacy configs."""
+    model_type = str(model_config.get("type", "")).strip().lower()
+    if model_type in {"", "lct_riesz_lstm", "plain_lstm"}:
+        return LCTRieszLSTMForecaster(
+            input_dim=int(model_config["input_dim"]),
+            hidden_dim=int(model_config["hidden_dim"]),
+            lstm_hidden_dim=int(model_config["lstm_hidden_dim"]),
+            num_layers=int(model_config["num_layers"]),
+            output_dim=int(model_config["output_dim"]),
+            dropout=float(model_config["dropout"]),
+            bidirectional=bool(model_config["bidirectional"]),
+            use_lct_riesz=bool(model_config["use_lct_riesz"]),
+            lct_alpha=float(model_config.get("lct_alpha", 1.0)),
+            lct_m=float(model_config.get("lct_m", 1.0)),
+            lct_q=float(model_config.get("lct_q", 0.0)),
+            riesz_gamma=float(model_config.get("riesz_gamma", 1.0)),
+            learnable_gamma=bool(model_config.get("learnable_gamma", False)),
+            lct_gate_init=float(model_config.get("lct_gate_init", 0.0)),
+        )
+
+    if model_type == "dual_branch_lct_riesz_lstm":
+        return DualBranchLCTRieszLSTMForecaster(
+            input_dim=int(model_config["input_dim"]),
+            hidden_dim=int(model_config["hidden_dim"]),
+            lstm_hidden_dim=int(model_config["lstm_hidden_dim"]),
+            signal_feature_indices=model_config["signal_feature_indices"],
+            num_layers=int(model_config["num_layers"]),
+            output_dim=int(model_config["output_dim"]),
+            dropout=float(model_config["dropout"]),
+            bidirectional=bool(model_config["bidirectional"]),
+            use_lct_riesz=bool(model_config.get("use_lct_riesz", True)),
+            spectral_hidden_dim=(
+                int(model_config["spectral_hidden_dim"])
+                if "spectral_hidden_dim" in model_config
+                else None
+            ),
+            fusion_gate_init=float(model_config.get("fusion_gate_init", -3.0)),
+            lct_alpha=float(model_config.get("lct_alpha", 1.0)),
+            lct_m=float(model_config.get("lct_m", 1.0)),
+            lct_q=float(model_config.get("lct_q", 0.0)),
+            riesz_gamma=float(model_config.get("riesz_gamma", 1.0)),
+            learnable_gamma=bool(model_config.get("learnable_gamma", False)),
+            lct_gate_init=float(model_config.get("lct_gate_init", 1.0)),
+        )
+
+    raise ValueError("Unsupported model.type: {}".format(model_type))
+
+
+def model_type_for_index(model_config: Mapping[str, Any], model: nn.Module) -> str:
+    """Return the stable model_type label used in experiment_index.csv."""
+    configured_type = str(model_config.get("type", "")).strip().lower()
+    if configured_type:
+        return configured_type
+    use_lct_riesz = bool(getattr(model, "use_lct_riesz", False))
+    return "lct_riesz_lstm" if use_lct_riesz else "plain_lstm"
 
 
 def train_one_epoch(
@@ -230,22 +289,7 @@ def main(
         pin_memory=device.type == "cuda",
     )
 
-    model = LCTRieszLSTMForecaster(
-        input_dim=int(model_config["input_dim"]),
-        hidden_dim=int(model_config["hidden_dim"]),
-        lstm_hidden_dim=int(model_config["lstm_hidden_dim"]),
-        num_layers=int(model_config["num_layers"]),
-        output_dim=int(model_config["output_dim"]),
-        dropout=float(model_config["dropout"]),
-        bidirectional=bool(model_config["bidirectional"]),
-        use_lct_riesz=bool(model_config["use_lct_riesz"]),
-        lct_alpha=float(model_config.get("lct_alpha", 1.0)),
-        lct_m=float(model_config.get("lct_m", 1.0)),
-        lct_q=float(model_config.get("lct_q", 0.0)),
-        riesz_gamma=float(model_config.get("riesz_gamma", 1.0)),
-        learnable_gamma=bool(model_config.get("learnable_gamma", False)),
-        lct_gate_init=float(model_config.get("lct_gate_init", 0.0)),
-    ).to(device)
+    model = build_model(model_config).to(device)
 
     criterion = nn.MSELoss()
     optimizer = torch.optim.AdamW(
@@ -379,6 +423,7 @@ def main(
         "val_samples": len(data_bundle.val_dataset),
         "test_samples": len(data_bundle.test_dataset),
         "trainable_parameters": model.count_parameters(),
+        "model_type": model_type_for_index(model_config, model),
         "use_lct_riesz": model.use_lct_riesz,
         "metrics": metrics,
     }
@@ -401,7 +446,7 @@ def main(
         prefix="experiment",
         experiment_name=experiment_config.get("name", "unnamed_experiment"),
         target_type=data_config["target_type"],
-        model_type="lct_riesz_lstm" if model.use_lct_riesz else "plain_lstm",
+        model_type=model_type_for_index(model_config, model),
         use_lct_riesz=model.use_lct_riesz,
         epochs=epochs,
         best_epoch=best_epoch,
