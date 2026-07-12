@@ -2,28 +2,26 @@
 
 ## 1. Project Goal
 
-本项目研究一维 Learnable LCT-Riesz / LCRT 频域增强模块在 BTC 日线金融时间序列预测中的作用。早期实验主要围绕下一日收益率预测和下一日收盘价预测展开，并将 LCT-Riesz + LSTM 与 Plain LSTM、naive baseline 进行比较。随着实验推进，当前论文实验主线建议从 `return` / `close` 点预测，转向更适合频域结构建模的 `volatility_5` 任务，即未来 5 日实现波动率预测。
+本项目研究一维 Learnable LCT-Riesz / LCRT 频域增强模块在 BTC 日线金融时间序列预测中的作用。早期实验围绕下一日收益率、下一日对数收益率和下一日收盘价预测展开；这些任务保留下来作为预实验和对照任务。随着实验推进，当前论文主线建议转向 `volatility_5`，即未来 5 日实现波动率预测。
 
-这一转向来自已有实验结果：`close` 价格预测中 naive last-close baseline 极强，当前神经网络模型难以超过；`return` 与 `log_return` 预测接近零均值噪声，zero-return baseline 在误差指标上非常有竞争力，方向预测接近随机；而 `volatility_5` 表示未来局部波动强度，更接近“局部高频波动结构建模”，与 LCT-Riesz / LCRT 的频域结构特征提取动机更一致。
-
-因此，当前有效实验可以分为两类：`return`、`log_return`、`close` 作为预实验和对照任务保留，用于说明金融预测目标选择的难度；`volatility_5` 作为后续论文主实验任务，重点检验 LCT-Riesz 作为频域辅助结构是否能够改善 LSTM 对局部波动模式的刻画。
+这一调整的原因是：`close` 价格预测中 naive last-close baseline 极强；`return` 和 `log_return` 点预测接近零均值噪声，zero-return baseline 在误差指标上很有竞争力；而 `volatility_5` 更接近局部波动结构建模，与 LCT-Riesz / LCRT 的频域结构特征提取动机更一致。
 
 ## 2. Dataset and Targets
 
-实验数据文件为 `data/processed/BTC_daily_train.csv`，基础输入特征为 `Open`、`High`、`Low`、`Close`、`Volume`。所有神经网络实验均按照时间顺序划分 train / validation / test，不进行随机划分，避免时间序列信息泄漏。默认输入窗口长度为 `sequence_length = 60`。
+实验数据文件为 `data/processed/BTC_daily_train.csv`。基础输入特征为 `Open`、`High`、`Low`、`Close`、`Volume`。所有实验按时间顺序划分 train / validation / test，不进行随机划分，默认输入窗口长度为 `sequence_length = 60`。
 
-当前数据模块已支持以下 `target_type`：
+当前支持的预测目标包括：
 
-- `close`：预测下一日 `Close`。训练时对 close target 使用训练集拟合的 target scaler 标准化，评估和保存时反标准化回原始价格尺度。
-- `return`：预测下一日普通收益率。
-- `log_return`：预测下一日对数收益率，公式为 `log_return_t = log(Close_t / Close_{t-1})`。
-- `volatility_5`：给定输入窗口截至时刻 `t`，预测未来 5 日对数收益率标准差，公式为 `volatility_5 = std(log_return_{t+1}, ..., log_return_{t+5})`。
+- `close`：下一日收盘价预测，训练时对 target 标准化，保存和评估时反标准化回原始价格尺度。
+- `return`：下一日普通收益率预测。
+- `log_return`：下一日对数收益率预测，`log_return_t = log(Close_t / Close_{t-1})`。
+- `volatility_5`：未来 5 日对数收益率标准差，`volatility_5 = std(log_return_{t+1}, ..., log_return_{t+5})`。未来 5 日只用于构造 `y`，不进入输入 `X`。
 
-对于 `volatility_5`，未来 5 日数据只用于构造监督目标 `y`，不进入输入 `X`，因此不引入未来信息泄漏。由于 `volatility_5` 是非负波动率水平，不是方向预测任务，评估时不计算 `directional_accuracy`。
+`volatility_5` 是非负回归目标，不计算 `directional_accuracy`。
 
 ## 3. Feature Settings
 
-除 5 个基础 OHLCV 特征外，项目已支持以下 derived features：
+基础特征为 5 个 OHLCV 特征。当前 derived features 包括：
 
 - `log_return`
 - `abs_log_return`
@@ -34,14 +32,9 @@
 - `rolling_vol_20`
 - `volume_change`
 
-其中 all derived features 实验使用 5 个 OHLCV 特征加 8 个派生特征，`input_dim = 13`。signal features 实验只使用局部变化型信号特征：
+All derived features 实验使用 5 个 OHLCV + 8 个派生特征，`input_dim = 13`。Signal features 实验只使用 4 个局部变化型特征：`log_return`、`abs_log_return`、`high_low_range`、`close_open_return`，因此输入为 5 个 OHLCV + 4 个 signal features，`input_dim = 9`。
 
-- `log_return`
-- `abs_log_return`
-- `high_low_range`
-- `close_open_return`
-
-因此 signal features 输入为 5 个 OHLCV 特征加 4 个派生特征，`input_dim = 9`。对应特征索引为：
+Signal features 的索引为：
 
 | Index | Feature |
 |---:|---|
@@ -55,26 +48,23 @@
 | 7 | high_low_range |
 | 8 | close_open_return |
 
-`rolling_vol_5`、`rolling_vol_10`、`rolling_vol_20` 与 `volume_change` 更接近显式统计特征；signal features 更偏局部价格变化信号。后续双分支模型中，LCT-Riesz 只作用于 `signal_feature_indices = [5, 6, 7, 8]`，而不是对全部输入通道做频域变换。
+在 dual-branch 与 residual auxiliary 模型中，LCT-Riesz 只作用于 `signal_feature_indices = [5, 6, 7, 8]`，而不是对全部输入通道做频域变换。
 
 ## 4. Models Compared
 
-当前实验比较以下模型与基准：
+当前比较的模型包括：
 
-- **Single-branch LCT-Riesz + LSTM**：输入投影后，将序列特征送入一维 Learnable LCT-Riesz 频域增强模块，再进入 LSTM。
-- **Plain LSTM baseline**：使用相同输入投影、LSTM 主干和预测头，但关闭 LCT-Riesz 模块。
-- **Dual-branch LCT-Riesz LSTM**：主分支保留完整输入的 LSTM 时序建模，频域辅助分支只对 signal features 做 LCT-Riesz 变换，再与主分支表示融合。
-- **Naive zero-return / zero-log-return baseline**：对 `return` 或 `log_return` 任务预测 0。
-- **Naive last-close baseline**：对 `close` 任务预测输入窗口最后一天 Close。
-- **Naive historical volatility_5 baseline**：对 `volatility_5` 任务使用过去 5 日 log_return 标准差预测未来 5 日波动率。
+- **Plain LSTM baseline**：完整输入进入 input projection + LSTM + prediction head，不启用 LCT-Riesz。
+- **Single-branch LCT-Riesz + LSTM**：输入投影后先经过 Learnable LCT-Riesz，再进入 LSTM。
+- **Dual-branch LCT-Riesz LSTM**：完整输入走 LSTM 主分支，signal features 走 LCT-Riesz 频域分支，二者融合后输出预测。
+- **Residual auxiliary LCT-Riesz LSTM**：完整输入走 Plain LSTM 主分支，LCT-Riesz 分支只学习残差修正，形式为 `final_pred = main_pred + residual_scale * spectral_delta`。
+- **Naive baselines**：包括 zero-return、zero-log-return、last-close 和 historical volatility_5。
 
-Single-branch LCT-Riesz + LSTM 与 Plain LSTM 的对比用于观察频域增强模块是否相对相同 LSTM 主干带来增益；dual-branch 模型则用于检验“频域辅助分支”是否比“对全部输入直接频域增强”的结构更合理。
+当前重点不在证明 LCT-Riesz 已经整体最优，而在判断它更适合怎样的结构位置：直接替代主时序分支，还是作为辅助频域修正分支。
 
 ## 5. Return and Log-Return Prediction Results
 
 ### Return Prediction
-
-早期 return 实验为有效预实验，当前已归档在 `outputs/archive/20260616_old_runs/` 与 `outputs/naive/legacy/` 下。
 
 | Run | Model | Epochs / Rule | RMSE | MAE | MSE | R2 | Directional Accuracy | Best Val Loss |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
@@ -84,11 +74,9 @@ Single-branch LCT-Riesz + LSTM 与 Plain LSTM 的对比用于观察频域增强�
 | `outputs/archive/20260616_old_runs/161511` | Plain LSTM baseline | 20 epoch | 0.024732 | 0.017845 | 0.000612 | -0.030760 | 0.504788 | 0.000844 |
 | `outputs/naive/legacy/20260617_114424` | Naive zero-return | `y_pred = 0` | 0.024361 | 0.017236 | 0.000593 | -0.000051 | 0.000000 | N/A |
 
-Return 任务中，LCT-Riesz + LSTM 相比 Plain LSTM 在 5 epoch 与 20 epoch 设置下都有轻微误差优势，但优势非常有限。Naive zero-return 在 RMSE、MAE、MSE 上仍然非常有竞争力，说明 BTC 日线收益率序列噪声较强，模型容易学习到接近 0 的平滑预测。深度模型的 directional accuracy 接近 50%，尚未形成稳定方向预测能力。
+Return 任务中，LCT-Riesz 相比 Plain LSTM 只有轻微误差优势，而 naive zero-return 在 RMSE、MAE、MSE 上仍然非常强。深度模型 directional accuracy 接近 50%，说明当前收益率方向预测能力有限。
 
 ### Log-Return Prediction
-
-后续新增的 `log_return` 任务进一步验证了收益率点预测的困难。
 
 | Run | Model | Rule | RMSE | MAE | MSE | MAPE | R2 | Directional Accuracy | Best Epoch |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|
@@ -96,11 +84,9 @@ Return 任务中，LCT-Riesz + LSTM 相比 Plain LSTM 在 5 epoch 与 20 epoch �
 | `outputs/log_return/baseline/20260617_161739` | Plain LSTM baseline | 20 epoch | 0.024466 | 0.017451 | 0.000599 | 160.079 | -0.009023 | 0.502052 | 16 |
 | `outputs/naive/zero_log_return/20260617_161818` | Naive zero-log-return | `y_pred = 0` | 0.024357 | 0.017231 | 0.000593 | 100.000 | -0.000025 | 0.000000 | N/A |
 
-在 log_return 任务中，Plain LSTM 在 RMSE、MAE、MSE 与 R2 上略优于 LCT-Riesz + LSTM，但 naive zero-log-return 仍然最强。LCT-Riesz + LSTM 的 directional accuracy 略高于 Plain LSTM，但两者都接近 50%，不足以构成稳定方向预测优势。因此，log_return 不适合作为当前论文主打任务，但可作为预实验说明日线收益率预测的噪声特征和 baseline 强度。
+Log-return 任务中，Plain LSTM 在误差指标上略优于 LCT-Riesz + LSTM，但 naive zero-log-return 仍然最强。因此 log_return 不适合作为当前论文主实验任务，只适合作为预实验说明收益率点预测的难度。
 
 ## 6. Close Prediction Results
-
-Close 预测实验在 target scaling 修复后重新评估，最终指标均保存为原始价格尺度。
 
 | Run | Model | Rule | RMSE | MAE | MSE | MAPE | R2 | Best Val Loss |
 |---|---|---|---:|---:|---:|---:|---:|---:|
@@ -108,58 +94,67 @@ Close 预测实验在 target scaling 修复后重新评估，最终指标均保�
 | `outputs/archive/20260617_old_runs/105015` | Plain LSTM baseline | target scaling fixed | 30396.6 | 25085.5 | 923952850 | 25.6134 | -1.63113 | 0.019631 |
 | `outputs/naive/legacy/20260617_113209` | Naive last-close | `y_pred[t] = last close` | 2031.34 | 1459.96 | 4126331 | 1.72367 | 0.988249 | N/A |
 
-修复 target scaling 后，close 任务的 `prediction_results.csv`、`metrics.json` 和预测曲线均回到原始价格尺度。LCT-Riesz + LSTM 相比 Plain LSTM 有轻微误差优势，但幅度很小。相比之下，naive last-close baseline 显著优于两个神经网络模型，说明直接预测价格水平时，当前 LSTM 类模型没有充分利用价格序列的强连续性和局部 persistence。Close 任务应作为重要对照和失败分析保留，但不适合作为当前方法有效性的主实验任务。
+Close 预测中，naive last-close baseline 显著优于两个神经网络模型。这说明直接预测价格水平时，当前 LSTM 类模型没有充分利用价格序列强连续性。因此 close 不适合作为当前方法有效性的主实验任务。
 
 ## 7. Volatility_5 Prediction Results
 
-`volatility_5` 是当前建议的论文主线任务。下表包含基础 OHLCV、all derived features、signal features 以及 dual-branch 结果。对于 signal features，优先采用新分层目录作为正式记录。
+`volatility_5` 是当前建议的论文主线任务。下表明确纳入最新 residual auxiliary LCT-Riesz 实验结果。
 
 | Feature Setting | Run | Model | RMSE | MAE | MSE | MAPE | R2 | Best Epoch |
 |---|---|---|---:|---:|---:|---:|---:|---:|
-| OHLCV | `outputs/volatility_5/lct_riesz/20260617_165504` | Single-branch LCT-Riesz + LSTM | 0.011797 | 0.009462 | 0.000139 | 75.1309 | -0.198046 | 4 |
-| OHLCV | `outputs/volatility_5/baseline/20260617_165615` | Plain LSTM baseline | 0.011440 | 0.007576 | 0.000131 | 39.1961 | -0.126717 | 8 |
-| OHLCV | `outputs/naive/historical_volatility_5/20260617_165649` | Naive historical volatility_5 | 0.013646 | 0.009666 | 0.000186 | 60.1919 | -0.603166 | N/A |
-| All derived features | `outputs/volatility_5/lct_riesz_features/20260618_095354` | Single-branch LCT-Riesz + all features | 0.012692 | 0.009464 | 0.000161 | 58.8777 | -0.386748 | 16 |
-| All derived features | `outputs/volatility_5/baseline_features/20260618_095605` | Plain LSTM + all features | 0.011012 | 0.007400 | 0.000121 | 40.7799 | -0.043915 | 13 |
-| Signal features | `outputs/volatility_5/lct_signal_features/20260624_103450` | Single-branch LCT-Riesz + signal features | 0.014591 | 0.012617 | 0.000213 | 102.842 | -0.832935 | 15 |
-| Signal features | `outputs/volatility_5/baseline_signal_features/20260624_104709` | Plain LSTM + signal features | 0.010498 | 0.007877 | 0.000110 | 57.5758 | 0.051218 | 6 |
-| Signal features | `outputs/volatility_5/dual_branch_signal_features/20260624_141601` | Dual-branch LCT-Riesz + signal features | 0.011193 | 0.008752 | 0.000125 | 67.7719 | -0.078637 | 4 |
+| OHLCV | `outputs/volatility_5/lct_riesz/20260617_165504` | Single-branch LCT-Riesz + LSTM | 0.011796667854544043 | 0.009461639953093114 | 0.00013916137247043278 | 75.13089729089293 | -0.19804589093828873 | 4 |
+| OHLCV | `outputs/volatility_5/baseline/20260617_165615` | Plain LSTM baseline | 0.011440106519770546 | 0.007575706398803767 | 0.00013087603718369656 | 39.19606764002378 | -0.12671710394009117 | 8 |
+| OHLCV | `outputs/naive/historical_volatility_5/20260617_165649` | Naive historical volatility_5 | 0.013646206488830805 | 0.00966588673854477 | 0.00018621895153580795 | 60.19194812937534 | -0.603166497324142 | N/A |
+| All derived features | `outputs/volatility_5/lct_riesz_features/20260618_095354` | Single-branch LCT-Riesz + all features | 0.012691746404780548 | 0.009463998684441822 | 0.00016108042680325997 | 58.87774165582409 | -0.3867479173017905 | 16 |
+| All derived features | `outputs/volatility_5/baseline_features/20260618_095605` | Plain LSTM + all features | 0.01101172102397565 | 0.007399955653602147 | 0.00012125799990986733 | 40.77986204846214 | -0.04391503156723742 | 13 |
+| Signal features | `outputs/volatility_5/lct_signal_features/20260624_103450` | Single-branch LCT-Riesz + signal features | 0.014591371743682859 | 0.012617288515397042 | 0.00021290812936234656 | 102.84170007594959 | -0.8329347073959887 | 15 |
+| Signal features | `outputs/volatility_5/baseline_signal_features/20260624_104709` | Plain LSTM + signal features | 0.010497984719026663 | 0.007876970764874714 | 0.00011020768316091732 | 57.57584047233924 | 0.051217592807093815 | 6 |
+| Signal features | `outputs/volatility_5/dual_branch_signal_features/20260624_141601` | Dual-branch LCT-Riesz + signal features | 0.011193357521667537 | 0.008752387062488879 | 0.00012529125260787123 | 67.77192512540792 | -0.07863746737093713 | 4 |
+| Signal features | `outputs/volatility_5/residual_lct_signal_features/20260625_163554` | Residual auxiliary LCT-Riesz + signal features | 0.010671519573653688 | 0.008156298901219602 | 0.00011388133001087377 | 62.123955075883345 | 0.019591018311474917 | 5 |
 
-当前 `volatility_5` 任务中，Plain LSTM + signal features 是整体最优结果，RMSE = 0.0104979847，R2 = 0.0512176。Single-branch LCT-Riesz + signal features 表现最差，RMSE = 0.0145913717，R2 = -0.8329347，说明“将全部输入通道直接送入 LCT-Riesz 后再进入 LSTM”的结构可能破坏金融时序特征，不适合作为主模型结构。
+三组 signal features 结果的核心比较如下：
 
-Dual-branch LCT-Riesz + signal features 明显优于 single-branch LCT-Riesz：RMSE 从 0.0145913717 降至 0.0111933575，约下降 23.3%；R2 从 -0.8329347 改善至 -0.0786375。这说明将原始时序主分支与 LCT-Riesz 频域辅助分支分离后，能够缓解单分支直接频域增强带来的性能下降。
+| Model | RMSE | MAE | R2 |
+|---|---:|---:|---:|
+| Plain LSTM + signal features | 0.010497984719026663 | 0.007876970764874714 | 0.051217592807093815 |
+| Dual-branch LCT-Riesz + signal features | 0.011193357521667537 | 0.008752387062488879 | -0.07863746737093713 |
+| Residual auxiliary LCT-Riesz + signal features | 0.010671519573653688 | 0.008156298901219602 | 0.019591018311474917 |
 
-同时，dual-branch LCT-Riesz 也优于 naive historical volatility_5 baseline：RMSE 从 0.0136462065 降至 0.0111933575，约下降 18.0%。不过 dual-branch 仍未超过 Plain LSTM + signal features，因此不能写作“本文方法最优”。更稳妥的结论是：双分支结构显著改善了单分支 LCT-Riesz，并优于 naive volatility baseline，但仍弱于当前最强 Plain LSTM signal-feature baseline。
+Residual auxiliary LCT-Riesz 比 dual-branch LCT-Riesz 更好：RMSE 从 0.0111933575 降至 0.0106715196；MAE 从 0.0087523871 降至 0.0081562989；R2 从 -0.0786375 提升至 0.0195910。这说明 residual auxiliary 结构缓解了 dual-branch 直接融合带来的性能不足。
 
-## 8. Single-Branch vs Dual-Branch LCT-Riesz Analysis
+但 residual auxiliary LCT-Riesz 仍没有超过 Plain LSTM + signal features。当前不能写 LCT-Riesz 最优，只能写 residual auxiliary 结构提高了 LCT-Riesz 辅助分支的稳定性，并说明 LCT-Riesz 更适合作为辅助频域修正分支，而不是替代主时序建模分支。
 
-早期 single-branch LCT-Riesz 结构将输入投影后的全部通道直接进行频域增强，然后再送入 LSTM。这种设计在 MNIST 类图像任务中较自然，因为空间维度具有相对一致的几何含义；但金融特征中的 OHLCV、rolling statistics 与局部变化特征含义不同，直接对所有通道做同一种频域变换，可能会破坏原始金融统计结构。
+## 8. Single-Branch / Dual-Branch / Residual LCT-Riesz Analysis
 
-Dual-branch LCT-Riesz LSTM 的动机是将“原始时序建模”和“频域辅助增强”解耦：
+Single-branch LCT-Riesz 将输入特征整体送入频域增强模块，再进入 LSTM。该方式在 signal features 实验中表现较差，说明直接对全部输入通道进行频域增强可能破坏金融特征结构。
 
-- 主分支：完整输入 `x` 直接进入 input projection + LSTM，保留原始金融时序信息；
-- 频域辅助分支：只选取 `signal_feature_indices = [5, 6, 7, 8]`，即 `log_return`、`abs_log_return`、`high_low_range`、`close_open_return`；
-- 选中的 signal features 经 LearnableLCTRiesz1D 和轻量时序建模得到 spectral representation；
-- 主分支表示与频域分支表示融合后输出 `volatility_5` 预测。
+Dual-branch LCT-Riesz 将完整输入保留给 LSTM 主分支，同时只对 `signal_feature_indices = [5, 6, 7, 8]` 的局部信号特征引入 LCT-Riesz 频域分支。该结构明显优于 single-branch，但仍弱于 Plain LSTM + signal features。
 
-Dual-branch 的实验意义不是证明 LCT-Riesz 已经超过 Plain LSTM，而是证明“分支化频域增强”比“单分支粗暴频域增强”更合理。该结果为下一阶段 residual auxiliary LCT-Riesz branch 提供了依据：LCT-Riesz 更适合作为辅助修正分支，而不是替代主时序建模分支。
+Residual auxiliary LCT-Riesz 使用完整输入的 Plain LSTM 作为主分支，同时只对 `signal_feature_indices = [5, 6, 7, 8]` 的局部信号特征引入 LCT-Riesz 频域辅助分支。最终输出形式为：
+
+```text
+final_pred = main_pred + residual_scale * spectral_delta
+```
+
+本次实验中 `residual_scale = 0.01110094879`，说明 LCT-Riesz 分支确实参与了预测，但贡献幅度较小，主要作为轻量残差修正项，而不是替代主时序建模分支。这一结果支持当前论文主线表述：LCT-Riesz / LCRT 不适合直接替代主时序建模分支，更适合作为局部波动结构的辅助频域修正分支。
 
 ## 9. Learned LCT Parameters
 
-有效 LCT-Riesz 实验中的 `learned_lct_parameters.txt` 记录了可学习 LCT 参数与对应矩阵。当前关键实验参数如下：
+有效 LCT-Riesz 实验中的 `learned_lct_parameters.txt` 记录了可学习 LCT 参数与对应矩阵。Residual auxiliary 行明确包含最新 learned LCT 参数。
 
-| Run | Task | alpha | m | q | gamma | A | B | C | D | determinant |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| `outputs/archive/20260616_old_runs/151529` | return, 5 epoch | 1.00965 | 1.01298 | -3.93239e-06 | 1 | -0.0153485 | 1.01287 | -0.987069 | -0.0149536 | 1.00000 |
-| `outputs/archive/20260616_old_runs/161430` | return, 20 epoch | 1.00298 | 0.991464 | -7.08560e-07 | 1 | -0.00463527 | 0.991453 | -1.00860 | -0.00471473 | 1.00000 |
-| `outputs/archive/20260617_old_runs/104838` | close, fixed scaling | 0.949332 | 0.977415 | -0.0100036 | 1 | 0.0777088 | 0.974321 | -1.01909 | 0.0910882 | 1.00000 |
-| `outputs/log_return/lct_riesz/20260617_161624` | log_return | 1.04852 | 0.912192 | 6.49269e-06 | 1 | -0.0694563 | 0.909544 | -1.09308 | -0.0834777 | 1.00000 |
-| `outputs/volatility_5/lct_riesz/20260617_165504` | volatility_5, OHLCV | 0.973821 | 1.02958 | -6.42102e-06 | 1 | 0.0423262 | 1.02871 | -0.970451 | 0.0399359 | 1.00000 |
-| `outputs/volatility_5/lct_riesz_features/20260618_095354` | volatility_5, all features | 1.11495 | 0.933607 | 0.00503878 | 1 | -0.167662 | 0.918428 | -1.05286 | -0.196984 | 1.00000 |
-| `outputs/volatility_5/lct_signal_features/20260624_103450` | volatility_5, signal features | 0.924780 | 1.06997 | -0.000122924 | 1 | 0.126127 | 1.06251 | -0.928078 | 0.110302 | 1.00000 |
-| `outputs/volatility_5/dual_branch_signal_features/20260624_141601` | volatility_5, dual-branch | 0.985621 | 1.00989 | -6.05299e-05 | 1 | 0.0228085 | 1.00963 | -0.989957 | 0.0224252 | 1.00000 |
+| Run | Task | alpha | m | q | gamma | A | B | C | D | determinant | residual_scale |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `outputs/archive/20260616_old_runs/151529` | return, 5 epoch | 1.00965 | 1.01298 | -3.93239e-06 | 1 | -0.0153485 | 1.01287 | -0.987069 | -0.0149536 | 1.00000 | N/A |
+| `outputs/archive/20260616_old_runs/161430` | return, 20 epoch | 1.00298 | 0.991464 | -7.08560e-07 | 1 | -0.00463527 | 0.991453 | -1.00860 | -0.00471473 | 1.00000 | N/A |
+| `outputs/archive/20260617_old_runs/104838` | close, fixed scaling | 0.949332 | 0.977415 | -0.0100036 | 1 | 0.0777088 | 0.974321 | -1.01909 | 0.0910882 | 1.00000 | N/A |
+| `outputs/log_return/lct_riesz/20260617_161624` | log_return | 1.04852 | 0.912192 | 6.49269e-06 | 1 | -0.0694563 | 0.909544 | -1.09308 | -0.0834777 | 1.00000 | N/A |
+| `outputs/volatility_5/lct_riesz/20260617_165504` | volatility_5, OHLCV | 0.973821 | 1.02958 | -6.42102e-06 | 1 | 0.0423262 | 1.02871 | -0.970451 | 0.0399359 | 1.00000 | N/A |
+| `outputs/volatility_5/lct_riesz_features/20260618_095354` | volatility_5, all features | 1.11495 | 0.933607 | 0.00503878 | 1 | -0.167662 | 0.918428 | -1.05286 | -0.196984 | 1.00000 | N/A |
+| `outputs/volatility_5/lct_signal_features/20260624_103450` | volatility_5, signal features | 0.924780 | 1.06997 | -0.000122924 | 1 | 0.126127 | 1.06251 | -0.928078 | 0.110302 | 1.00000 | N/A |
+| `outputs/volatility_5/dual_branch_signal_features/20260624_141601` | volatility_5, dual-branch | 0.985621 | 1.00989 | -6.05299e-05 | 1 | 0.0228085 | 1.00963 | -0.989957 | 0.0224252 | 1.00000 | N/A |
+| `outputs/volatility_5/residual_lct_signal_features/20260625_163554` | volatility_5, residual auxiliary | 1.010118961 | 0.9873722196 | -9.806777962e-05 | 1 | -0.01569343731 | 0.9872475266 | -1.012662888 | -0.01600060239 | 1.000000036 | 0.01110094879 |
 
-Dual-branch 实验中，LCT matrix determinant = 0.999999997，仍接近 1，说明可学习 LCT 参数化约束运行正常，没有发生数值失稳。整体来看，LCT 参数在训练后发生小幅偏移，但矩阵合法性保持良好，这对论文中的可解释性分析是有价值的。
+Residual auxiliary 实验中，LCT matrix determinant = 1.000000036，仍接近 1，说明可学习 LCT 参数化约束保持正常。`residual_scale = 0.01110094879` 表明频域分支被训练为小幅修正项，符合 residual auxiliary 设计目标。
 
 ## 10. Invalid / Debug Experiments
 
@@ -175,44 +170,28 @@ Dual-branch 实验中，LCT matrix determinant = 0.999999997，仍接近 1，说
 | `outputs/archive/20260616_old_runs/181022` | LCT-Riesz + LSTM | close | 89373.5 | 87386.9 | 7987629771 | 1048381844 | invalid |
 | `outputs/archive/20260616_old_runs/181405` | Plain LSTM baseline | close | 89374.2 | 87387.5 | 7987745280 | 1048421436 | invalid |
 
-此外，`experiment_index.csv` 中同时存在旧平铺目录和新分层目录记录时，本文档优先采用新分层目录作为正式记录。例如 signal features 与 dual-branch 的正式记录使用 `outputs/volatility_5/lct_signal_features/20260624_103450`、`outputs/volatility_5/baseline_signal_features/20260624_104709` 和 `outputs/volatility_5/dual_branch_signal_features/20260624_141601`。
-
 ## 11. Current Conclusion
 
 当前实验支持以下谨慎结论：
 
-1. 在 `return` / `log_return` 预测中，zero-return naive baseline 仍然很强，深度模型未体现稳定预测优势；directional accuracy 接近 50%，方向预测能力有限。
-2. 在 `close` 预测中，last-close naive baseline 明显强于神经网络模型，因此 close 不适合作为当前方法有效性的主实验任务。
+1. `return` / `log_return` 点预测中，zero-return baseline 很强，深度模型没有稳定预测优势。
+2. `close` 预测中，last-close naive baseline 明显强于神经网络模型，因此 close 不适合作为当前主实验任务。
 3. `volatility_5` 更贴近局部波动结构建模，是当前更适合 LCT-Riesz / LCRT 频域增强的主任务。
-4. Single-branch LCT-Riesz 在 `volatility_5` 上表现不稳定，特别是在 signal features 下明显弱于 Plain LSTM，说明直接对全部输入通道进行频域增强不可取。
-5. Dual-branch LCT-Riesz 明显优于 single-branch LCT-Riesz 和 naive historical volatility baseline，说明 LCT-Riesz 作为辅助频域分支具有一定价值。
-6. 当前最好结果仍来自 Plain LSTM + signal features，因此现阶段不能宣称 LCT-Riesz 方法整体最优。
-7. 后续研究应将 LCT-Riesz 定位为辅助频域修正分支，而非替代主时序建模分支。
-
-总体而言，当前结果不支持夸大 LCT-Riesz 的预测能力，但支持一个更明确的研究方向：频域结构不应粗暴作用于全部金融输入，而应作为受控、轻量、可解释的辅助分支服务于局部波动建模。
+4. Single-branch LCT-Riesz 在 signal features 下明显弱于 Plain LSTM，说明直接对全部输入通道进行频域增强不可取。
+5. Dual-branch LCT-Riesz 明显优于 single-branch LCT-Riesz，但仍弱于 Plain LSTM + signal features。
+6. Residual auxiliary LCT-Riesz 相比 dual-branch LCT-Riesz 进一步降低误差并将 R2 提升为正值，说明 residual auxiliary 结构比直接双分支融合更稳定。
+7. Plain LSTM + signal features 仍是当前单次实验中的最优模型，因此不能宣称 LCT-Riesz 方法整体最优。
+8. LCT-Riesz / LCRT 更适合作为局部波动结构的辅助频域修正分支，而不是替代主时序建模分支。
 
 ## 12. Next Steps
 
-下一阶段建议围绕 `volatility_5` 主任务继续推进，而不是同时展开 close、return、log_return 多条主线。
+Residual auxiliary LCT-Riesz 已经完成单次实验，下一步不再把它作为“待实现模型”，而是进入稳定性验证阶段。
 
-1. 将模型改为 residual auxiliary LCT-Riesz branch：
-
-   `main_pred = Plain LSTM prediction`
-
-   `spectral_delta = LCT-Riesz branch correction`
-
-   `final_pred = main_pred + lambda * spectral_delta`
-
-   其中 `lambda` 初始较小，使模型初始接近 Plain LSTM，避免频域分支破坏主分支。
-
-2. 对 `volatility_5` 主任务进行多随机种子实验，验证 Plain LSTM、single-branch LCT、dual-branch LCT 的稳定性。
-
-3. 优先优化 `volatility_5`，将 close、return、log_return 放在预实验或失败分析中，用于说明金融预测任务选择的重要性。
-
-4. 尝试 HuberLoss 或对波动率峰值加权，以改善模型对极端波动区间的响应不足。
-
-5. 在方法章节中强调 LCT-Riesz / LCRT 的作用是辅助提取局部波动结构，而不是直接替代全部原始金融特征。
-
-6. 在进一步引入 TCN / Transformer 前，先确认 residual auxiliary LCT 分支是否能稳定超过 Plain LSTM + signal features。否则堆叠更复杂主干可能掩盖核心问题。
-
-当前实验框架已经闭环，且实验主线已从收益率和价格点预测转向更合理的未来局部波动率预测；但模型预测能力仍需通过更合理的辅助分支设计、多随机种子验证和更强 baseline 进一步检验。
+1. 进行多随机种子实验，建议 seeds 先使用 `42`、`2024`、`3407`。
+2. 每个 seed 必须记录：`seed`、`run_dir`、`RMSE`、`MAE`、`MSE`、`MAPE`、`R2`、`best_epoch`。
+3. 重点比较三类模型：
+   - Plain LSTM + signal features
+   - Dual-branch LCT-Riesz + signal features
+   - Residual auxiliary LCT-Riesz + signal features
+4. 多 seed 结果应单独汇总 `mean ± std`，不能只看单次实验结果。
+5. 如果 residual auxiliary 在多个 seed 下稳定接近或超过 Plain LSTM + signal features，才适合进一步强化 LCT-Riesz 辅助频域分支有效性的论述。
