@@ -12,6 +12,35 @@ from src.models.tcn_forecaster import TCNForecaster
 from train import build_model, load_config
 
 
+def _changed_paths(left: object, right: object, prefix: tuple[str, ...] = ()) -> set[tuple[str, ...]]:
+    """Return nested mapping/list paths whose values differ."""
+    if isinstance(left, dict) and isinstance(right, dict):
+        paths: set[tuple[str, ...]] = set()
+        for key in set(left).union(right):
+            paths.update(
+                _changed_paths(
+                    left.get(key),
+                    right.get(key),
+                    prefix + (str(key),),
+                )
+            )
+        return paths
+    if isinstance(left, list) and isinstance(right, list):
+        paths = set()
+        for index in range(max(len(left), len(right))):
+            left_value = left[index] if index < len(left) else None
+            right_value = right[index] if index < len(right) else None
+            paths.update(
+                _changed_paths(
+                    left_value,
+                    right_value,
+                    prefix + (str(index),),
+                )
+            )
+        return paths
+    return set() if left == right else {prefix}
+
+
 class TCNIntegrationTest(unittest.TestCase):
     """Validate plain TCN wiring without running formal experiments."""
 
@@ -95,6 +124,55 @@ class TCNIntegrationTest(unittest.TestCase):
             tcn_config["experiment"]["checkpoints_root"],
             lstm_config["experiment"]["checkpoints_root"],
         )
+
+    def test_low_learning_rate_tcn_config_only_changes_lr_and_name(self) -> None:
+        """Ensure the controlled LR config differs only in allowed fields."""
+        baseline_config = load_config(
+            "experiments/tcn/configs/tcn_volatility_5_baseline_signal_features.yaml"
+        )
+        lr_config = load_config(
+            "experiments/tcn/configs/tcn_volatility_5_baseline_signal_features_lr3e4.yaml"
+        )
+
+        self.assertEqual(baseline_config["training"]["learning_rate"], 0.001)
+        self.assertEqual(lr_config["training"]["learning_rate"], 0.0003)
+        self.assertNotEqual(
+            baseline_config["experiment"]["name"],
+            lr_config["experiment"]["name"],
+        )
+        self.assertEqual(
+            lr_config["experiment"]["name"],
+            "tcn_volatility_5_baseline_signal_features_lr3e4",
+        )
+        self.assertEqual(
+            _changed_paths(baseline_config, lr_config),
+            {
+                ("training", "learning_rate"),
+                ("experiment", "name"),
+            },
+        )
+        self.assertEqual(lr_config["model"], baseline_config["model"])
+        self.assertEqual(lr_config["data"], baseline_config["data"])
+        for field in ("epochs", "weight_decay", "seed", "device"):
+            self.assertEqual(
+                lr_config["training"][field],
+                baseline_config["training"][field],
+            )
+        self.assertEqual(
+            lr_config["experiment"]["outputs_root"],
+            baseline_config["experiment"]["outputs_root"],
+        )
+        self.assertEqual(
+            lr_config["experiment"]["checkpoints_root"],
+            baseline_config["experiment"]["checkpoints_root"],
+        )
+
+        model = build_model(lr_config["model"])
+        self.assertIsInstance(model, TCNForecaster)
+        self.assertEqual(model.count_parameters(), 59177)
+        x = torch.randn(2, 60, 9)
+        output = model(x)
+        self.assertEqual(tuple(output.shape), (2, 1))
 
 
 if __name__ == "__main__":
