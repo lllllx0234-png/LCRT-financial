@@ -6,7 +6,16 @@ data:
     - Low
     - Close
     - Volume
-  target_type: close
+    - log_return
+    - abs_log_return
+    - high_low_range
+    - close_open_return
+  derived_features:
+    - log_return
+    - abs_log_return
+    - high_low_range
+    - close_open_return
+  target_type: volatility_5
   sequence_length: 60
   train_ratio: 0.7
   val_ratio: 0.15
@@ -15,14 +24,14 @@ data:
   num_workers: 0
 
 model:
-  input_dim: 5
+  input_dim: 9
   hidden_dim: 32
   lstm_hidden_dim: 64
   num_layers: 2
   output_dim: 1
   dropout: 0.1
   bidirectional: false
-  use_lct_riesz: false
+  use_lct_riesz: true
 
 training:
   epochs: 20
@@ -32,5 +41,7 @@ training:
   device: auto
 
 experiment:
-  name: lstm_close_baseline
+  name: lstm_volatility_5_lct_signal_features
   save_outputs: true
+  outputs_root: experiments/lstm/outputs
+  checkpoints_root: experiments/lstm/checkpoints

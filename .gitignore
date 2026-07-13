@@ -1,7 +1,11 @@
-# Python cache
+# Python caches
 __pycache__/
-*.pyc
+*.py[cod]
 .pytest_cache/
+
+# Generated model checkpoints
+experiments/*/checkpoints/**
+!experiments/*/checkpoints/.gitkeep
 
 # Virtual environments
 .venv/
@@ -25,3 +29,16 @@ data/raw/*.csv
 # IDE
 .vscode/*
 !.vscode/settings.json
+
+# Generated experiment outputs
+experiments/*/outputs/**
+!experiments/*/outputs/.gitkeep
+
+# Generated model checkpoints
+experiments/*/checkpoints/**
+!experiments/*/checkpoints/.gitkeep
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/

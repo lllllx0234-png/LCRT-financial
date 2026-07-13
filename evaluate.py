@@ -78,7 +78,7 @@ def run_evaluation(
     if not csv_path.is_file():
         raise FileNotFoundError(
             "CSV file not found. Please place your OHLCV data at "
-            "data/raw/sample.csv or update configs/lstm_return.yaml."
+            "data/raw/sample.csv or update experiments/lstm/configs/lstm_return.yaml."
         )
 
     seed = int(training_config["seed"])
@@ -193,7 +193,7 @@ def run_evaluation(
 
 
 def main(
-    config_path: PathLike = "configs/lstm_return.yaml",
+    config_path: PathLike = "experiments/lstm/configs/lstm_return.yaml",
     checkpoint_path: PathLike = None,
 ) -> ExperimentPaths:
     """Run independent evaluation for a required trained checkpoint."""
@@ -208,7 +208,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--config",
-        default="configs/lstm_return.yaml",
+        default="experiments/lstm/configs/lstm_return.yaml",
         help="Path to the YAML experiment configuration.",
     )
     parser.add_argument(

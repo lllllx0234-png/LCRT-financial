@@ -132,8 +132,15 @@ def append_experiment_index(
     outputs_root: PathLike = "outputs",
     **fields: Any,
 ) -> Path:
-    """Append one run summary row to outputs/experiment_index.csv."""
-    index_path = Path(outputs_root) / "experiment_index.csv"
+    """Append one run summary row to the experiment index for an outputs root."""
+    outputs_directory = Path(outputs_root)
+    if (
+        outputs_directory.name == "outputs"
+        and outputs_directory.parent.parent.name == "experiments"
+    ):
+        index_path = outputs_directory.parent / "experiment_index.csv"
+    else:
+        index_path = outputs_directory / "experiment_index.csv"
     index_path.parent.mkdir(parents=True, exist_ok=True)
     row = {field: "" for field in EXPERIMENT_INDEX_FIELDS}
     for key, value in fields.items():

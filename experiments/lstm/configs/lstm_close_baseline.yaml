@@ -6,7 +6,7 @@ data:
     - Low
     - Close
     - Volume
-  target_type: log_return
+  target_type: close
   sequence_length: 60
   train_ratio: 0.7
   val_ratio: 0.15
@@ -32,5 +32,7 @@ training:
   device: auto
 
 experiment:
-  name: lstm_log_return_baseline
+  name: lstm_close_baseline
   save_outputs: true
+  outputs_root: experiments/lstm/outputs
+  checkpoints_root: experiments/lstm/checkpoints

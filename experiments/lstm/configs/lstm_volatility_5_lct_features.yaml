@@ -10,11 +10,19 @@ data:
     - abs_log_return
     - high_low_range
     - close_open_return
+    - rolling_vol_5
+    - rolling_vol_10
+    - rolling_vol_20
+    - volume_change
   derived_features:
     - log_return
     - abs_log_return
     - high_low_range
     - close_open_return
+    - rolling_vol_5
+    - rolling_vol_10
+    - rolling_vol_20
+    - volume_change
   target_type: volatility_5
   sequence_length: 60
   train_ratio: 0.7
@@ -24,7 +32,7 @@ data:
   num_workers: 0
 
 model:
-  input_dim: 9
+  input_dim: 13
   hidden_dim: 32
   lstm_hidden_dim: 64
   num_layers: 2
@@ -41,5 +49,7 @@ training:
   device: auto
 
 experiment:
-  name: lstm_volatility_5_lct_signal_features
+  name: lstm_volatility_5_lct_riesz_features
   save_outputs: true
+  outputs_root: experiments/lstm/outputs
+  checkpoints_root: experiments/lstm/checkpoints

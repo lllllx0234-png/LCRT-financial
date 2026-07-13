@@ -34,3 +34,5 @@ training:
 experiment:
   name: lstm_volatility_5_baseline
   save_outputs: true
+  outputs_root: experiments/lstm/outputs
+  checkpoints_root: experiments/lstm/checkpoints

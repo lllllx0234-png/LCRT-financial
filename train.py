@@ -262,7 +262,7 @@ def collect_predictions(
 
 
 def main(
-    config_path: PathLike = "configs/lstm_return.yaml",
+    config_path: PathLike = "experiments/lstm/configs/lstm_return.yaml",
 ) -> ExperimentPaths:
     """Run training, validation, test evaluation, and artifact generation."""
     config = load_config(config_path)
@@ -275,7 +275,7 @@ def main(
     if not csv_path.is_file():
         raise FileNotFoundError(
             "CSV file not found. Please place your OHLCV data at "
-            "data/raw/sample.csv or update configs/lstm_return.yaml."
+            "data/raw/sample.csv or update experiments/lstm/configs/lstm_return.yaml."
         )
 
     seed = int(training_config["seed"])

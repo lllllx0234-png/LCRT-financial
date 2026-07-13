@@ -144,7 +144,7 @@ def _naive_metadata(target_type: str) -> Dict[str, str]:
 
 
 def run_naive_baseline(
-    config_path: PathLike = "configs/lstm_close_lct.yaml",
+    config_path: PathLike = "experiments/lstm/configs/lstm_close_lct.yaml",
 ) -> ExperimentPaths:
     """Run a naive baseline and save metrics, predictions, summary, and plots."""
     config = load_config(config_path)
@@ -231,7 +231,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--config",
-        default="configs/lstm_close_lct.yaml",
+        default="experiments/lstm/configs/lstm_close_lct.yaml",
         help="Path to the YAML configuration file.",
     )
     arguments = parser.parse_args()

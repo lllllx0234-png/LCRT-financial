@@ -6,7 +6,7 @@ data:
     - Low
     - Close
     - Volume
-  target_type: return
+  target_type: volatility_5
   sequence_length: 60
   train_ratio: 0.7
   val_ratio: 0.15
@@ -22,15 +22,17 @@ model:
   output_dim: 1
   dropout: 0.1
   bidirectional: false
-  use_lct_riesz: false
+  use_lct_riesz: true
 
 training:
-  epochs: 5
+  epochs: 20
   learning_rate: 0.001
   weight_decay: 0.0001
   seed: 42
   device: auto
 
 experiment:
-  name: lstm_return_baseline
+  name: lstm_volatility_5_lct_riesz
   save_outputs: true
+  outputs_root: experiments/lstm/outputs
+  checkpoints_root: experiments/lstm/checkpoints
