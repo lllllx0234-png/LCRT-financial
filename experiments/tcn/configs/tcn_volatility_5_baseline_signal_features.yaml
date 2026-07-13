@@ -1,0 +1,49 @@
+data:
+  csv_path: data/processed/BTC_daily_train.csv
+  feature_columns:
+    - Open
+    - High
+    - Low
+    - Close
+    - Volume
+    - log_return
+    - abs_log_return
+    - high_low_range
+    - close_open_return
+  derived_features:
+    - log_return
+    - abs_log_return
+    - high_low_range
+    - close_open_return
+  target_type: volatility_5
+  sequence_length: 60
+  train_ratio: 0.7
+  val_ratio: 0.15
+  test_ratio: 0.15
+  batch_size: 32
+  num_workers: 0
+
+model:
+  type: plain_tcn
+  input_dim: 9
+  channels:
+    - 52
+    - 52
+    - 52
+    - 52
+  kernel_size: 3
+  dropout: 0.1
+  output_dim: 1
+
+training:
+  epochs: 20
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  seed: 42
+  device: auto
+
+experiment:
+  name: tcn_volatility_5_baseline_signal_features
+  save_outputs: true
+  outputs_root: experiments/tcn/outputs
+  checkpoints_root: experiments/tcn/checkpoints

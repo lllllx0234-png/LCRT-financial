@@ -17,6 +17,7 @@ from src.data.dataset import create_dataloaders
 from src.models.dual_branch_lct_lstm import DualBranchLCTRieszLSTMForecaster
 from src.models.lstm_forecaster import LCTRieszLSTMForecaster
 from src.models.residual_lct_lstm import ResidualAuxiliaryLCTRieszLSTMForecaster
+from src.models.tcn_forecaster import TCNForecaster
 from src.utils.experiment_io import (
     ExperimentPaths,
     append_experiment_index,
@@ -89,6 +90,15 @@ def resolve_device(device_config: str) -> torch.device:
 def build_model(model_config: Mapping[str, Any]) -> nn.Module:
     """Build the configured forecasting model while preserving legacy configs."""
     model_type = str(model_config.get("type", "")).strip().lower()
+    if model_type == "plain_tcn":
+        return TCNForecaster(
+            input_dim=int(model_config["input_dim"]),
+            channels=[int(channel) for channel in model_config["channels"]],
+            kernel_size=int(model_config["kernel_size"]),
+            dropout=float(model_config["dropout"]),
+            output_dim=int(model_config.get("output_dim", 1)),
+        )
+
     if model_type in {"", "lct_riesz_lstm", "plain_lstm"}:
         return LCTRieszLSTMForecaster(
             input_dim=int(model_config["input_dim"]),
