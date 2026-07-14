@@ -174,6 +174,59 @@ class TCNIntegrationTest(unittest.TestCase):
         output = model(x)
         self.assertEqual(tuple(output.shape), (2, 1))
 
+    def test_low_learning_rate_40epoch_config_only_changes_epochs_and_name(self) -> None:
+        """Ensure the 40 epoch convergence config differs only in allowed fields."""
+        lr_config = load_config(
+            "experiments/tcn/configs/tcn_volatility_5_baseline_signal_features_lr3e4.yaml"
+        )
+        epoch40_config = load_config(
+            "experiments/tcn/configs/tcn_volatility_5_baseline_signal_features_lr3e4_40epoch.yaml"
+        )
+
+        self.assertEqual(lr_config["training"]["epochs"], 20)
+        self.assertEqual(epoch40_config["training"]["epochs"], 40)
+        self.assertEqual(lr_config["training"]["learning_rate"], 0.0003)
+        self.assertEqual(epoch40_config["training"]["learning_rate"], 0.0003)
+        self.assertEqual(
+            epoch40_config["experiment"]["name"],
+            "tcn_volatility_5_baseline_signal_features_lr3e4_40epoch",
+        )
+        self.assertEqual(
+            _changed_paths(lr_config, epoch40_config),
+            {
+                ("training", "epochs"),
+                ("experiment", "name"),
+            },
+        )
+        self.assertEqual(epoch40_config["data"], lr_config["data"])
+        self.assertEqual(epoch40_config["model"], lr_config["model"])
+        self.assertEqual(
+            set(epoch40_config["training"]),
+            {"epochs", "learning_rate", "weight_decay", "seed", "device"},
+        )
+        for field in ("weight_decay", "seed", "device"):
+            self.assertEqual(
+                epoch40_config["training"][field],
+                lr_config["training"][field],
+            )
+        self.assertEqual(
+            epoch40_config["experiment"]["outputs_root"],
+            lr_config["experiment"]["outputs_root"],
+        )
+        self.assertEqual(
+            epoch40_config["experiment"]["checkpoints_root"],
+            lr_config["experiment"]["checkpoints_root"],
+        )
+
+        model = build_model(epoch40_config["model"])
+        self.assertIsInstance(model, TCNForecaster)
+        self.assertEqual(model.count_parameters(), 59177)
+        self.assertEqual(model.channels, (52, 52, 52, 52))
+        self.assertEqual(model.kernel_size, 3)
+        x = torch.randn(2, 60, 9)
+        output = model(x)
+        self.assertEqual(tuple(output.shape), (2, 1))
+
 
 if __name__ == "__main__":
     unittest.main()
