@@ -18,6 +18,7 @@ from src.models.dual_branch_lct_lstm import DualBranchLCTRieszLSTMForecaster
 from src.models.lstm_forecaster import LCTRieszLSTMForecaster
 from src.models.residual_lct_lstm import ResidualAuxiliaryLCTRieszLSTMForecaster
 from src.models.tcn_forecaster import TCNForecaster
+from src.models.transformer_forecaster import TransformerForecaster
 from src.utils.experiment_io import (
     ExperimentPaths,
     append_experiment_index,
@@ -90,6 +91,22 @@ def resolve_device(device_config: str) -> torch.device:
 def build_model(model_config: Mapping[str, Any]) -> nn.Module:
     """Build the configured forecasting model while preserving legacy configs."""
     model_type = str(model_config.get("type", "")).strip().lower()
+    if model_type == "plain_transformer":
+        causal_attention = model_config.get("causal_attention", True)
+        if not isinstance(causal_attention, bool):
+            raise TypeError("model.causal_attention must be a bool.")
+        return TransformerForecaster(
+            input_dim=int(model_config["input_dim"]),
+            d_model=int(model_config["d_model"]),
+            nhead=int(model_config["nhead"]),
+            num_layers=int(model_config["num_layers"]),
+            dim_feedforward=int(model_config["dim_feedforward"]),
+            dropout=float(model_config["dropout"]),
+            max_sequence_length=int(model_config["max_sequence_length"]),
+            output_dim=int(model_config.get("output_dim", 1)),
+            causal_attention=causal_attention,
+        )
+
     if model_type == "plain_tcn":
         return TCNForecaster(
             input_dim=int(model_config["input_dim"]),

@@ -1,0 +1,49 @@
+data:
+  csv_path: data/processed/BTC_daily_train.csv
+  feature_columns:
+    - Open
+    - High
+    - Low
+    - Close
+    - Volume
+    - log_return
+    - abs_log_return
+    - high_low_range
+    - close_open_return
+  derived_features:
+    - log_return
+    - abs_log_return
+    - high_low_range
+    - close_open_return
+  target_type: volatility_5
+  sequence_length: 60
+  train_ratio: 0.7
+  val_ratio: 0.15
+  test_ratio: 0.15
+  batch_size: 32
+  num_workers: 0
+
+model:
+  type: plain_transformer
+  input_dim: 9
+  d_model: 56
+  nhead: 4
+  num_layers: 2
+  dim_feedforward: 112
+  dropout: 0.1
+  max_sequence_length: 60
+  output_dim: 1
+  causal_attention: true
+
+training:
+  epochs: 20
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  seed: 42
+  device: auto
+
+experiment:
+  name: transformer_volatility_5_baseline_signal_features
+  save_outputs: true
+  outputs_root: experiments/transformer/outputs
+  checkpoints_root: experiments/transformer/checkpoints
