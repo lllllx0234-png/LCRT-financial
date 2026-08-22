@@ -34,6 +34,9 @@ data/raw/*.csv
 experiments/*/outputs/**
 !experiments/*/outputs/.gitkeep
 
+# Reproducible residual-contribution diagnostic artifacts
+experiments/lstm/diagnostics/
+
 # Generated model checkpoints
 experiments/*/checkpoints/**
 !experiments/*/checkpoints/.gitkeep

@@ -173,6 +173,10 @@ class ResidualAuxiliaryLCTRieszLSTMForecaster(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Predict targets using the main branch plus spectral correction."""
+        return self.forward_components(x)["final_pred"]
+
+    def forward_components(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """Return the genuine main and spectral prediction components."""
         if x.ndim != 3:
             raise ValueError(
                 "x must have shape (batch, sequence_length, input_dim)."
@@ -202,7 +206,15 @@ class ResidualAuxiliaryLCTRieszLSTMForecaster(nn.Module):
         spectral_repr = spectral_sequence.mean(dim=1)
         spectral_delta = self.spectral_delta_head(spectral_repr)
 
-        return main_pred + self.residual_scale * spectral_delta
+        residual_correction = self.residual_scale * spectral_delta
+        final_pred = main_pred + residual_correction
+        return {
+            "main_pred": main_pred,
+            "spectral_delta": spectral_delta,
+            "residual_scale": self.residual_scale,
+            "residual_correction": residual_correction,
+            "final_pred": final_pred,
+        }
 
     def export_lct_parameters(self) -> Optional[Dict[str, float]]:
         """Export LCT-Riesz parameters plus the residual correction scale."""

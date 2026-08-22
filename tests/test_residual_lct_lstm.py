@@ -14,14 +14,15 @@ import torch
 import yaml
 
 from src.models.residual_lct_lstm import ResidualAuxiliaryLCTRieszLSTMForecaster
-from train import main
+from evaluate import run_evaluation
+from train import build_model, main
 
 
 class ResidualAuxiliaryLCTRieszLSTMTest(unittest.TestCase):
     """Validate residual LCT-Riesz correction and training integration."""
 
-    def test_forward_backward_and_parameter_export(self) -> None:
-        """Run a minimal differentiable pass through the residual model."""
+    def test_forward_components_backward_and_parameter_export(self) -> None:
+        """Validate component identities, compatibility, and gradients."""
         model = ResidualAuxiliaryLCTRieszLSTMForecaster(
             input_dim=9,
             hidden_dim=8,
@@ -33,11 +34,53 @@ class ResidualAuxiliaryLCTRieszLSTMTest(unittest.TestCase):
             bidirectional=False,
         )
         x = torch.randn(4, 16, 9)
+        parameters_before = {
+            name: parameter.detach().clone()
+            for name, parameter in model.named_parameters()
+        }
+        state_keys_before = tuple(model.state_dict())
 
         output = model(x)
+        components = model.forward_components(x)
         self.assertEqual(tuple(output.shape), (4, 1))
+        self.assertTrue(torch.equal(output, components["final_pred"]))
+        self.assertEqual(
+            set(components),
+            {
+                "main_pred",
+                "spectral_delta",
+                "residual_scale",
+                "residual_correction",
+                "final_pred",
+            },
+        )
+        for name in (
+            "main_pred",
+            "spectral_delta",
+            "residual_correction",
+            "final_pred",
+        ):
+            self.assertEqual(tuple(components[name].shape), (4, 1))
+            self.assertTrue(torch.isfinite(components[name]).all())
+        self.assertEqual(tuple(components["residual_scale"].shape), ())
+        self.assertTrue(torch.isfinite(components["residual_scale"]).all())
+        self.assertTrue(
+            torch.equal(
+                components["residual_correction"],
+                components["residual_scale"] * components["spectral_delta"],
+            )
+        )
+        self.assertTrue(
+            torch.equal(
+                components["final_pred"],
+                components["main_pred"] + components["residual_correction"],
+            )
+        )
+        self.assertEqual(tuple(model.state_dict()), state_keys_before)
+        for name, parameter in model.named_parameters():
+            self.assertTrue(torch.equal(parameter.detach(), parameters_before[name]))
 
-        loss = output.mean()
+        loss = components["final_pred"].mean()
         loss.backward()
         self.assertIsNotNone(model.input_projection.weight.grad)
         self.assertIsNotNone(model.residual_scale.grad)
@@ -59,6 +102,50 @@ class ResidualAuxiliaryLCTRieszLSTMTest(unittest.TestCase):
             },
         )
         self.assertAlmostEqual((params or {})["residual_scale"], 0.0)
+
+    def test_formal_checkpoint_strictly_loads_with_component_interface(self) -> None:
+        """Strictly load the existing formal residual checkpoint when present."""
+        project_root = Path(__file__).resolve().parents[1]
+        run_dir = (
+            project_root
+            / "experiments"
+            / "lstm"
+            / "outputs"
+            / "volatility_5"
+            / "residual_lct_signal_features"
+            / "20260625_163554"
+        )
+        checkpoint_path = (
+            project_root
+            / "experiments"
+            / "lstm"
+            / "checkpoints"
+            / "volatility_5"
+            / "residual_lct_signal_features"
+            / "20260625_163554"
+            / "best_model.pth"
+        )
+        if not checkpoint_path.is_file():
+            self.skipTest("Formal residual checkpoint is not available locally.")
+
+        config = json.loads(
+            (run_dir / "config.json").read_text(encoding="utf-8")
+        )
+        model = build_model(config["model"])
+        checkpoint = torch.load(
+            checkpoint_path,
+            map_location="cpu",
+            weights_only=False,
+        )
+        incompatible = model.load_state_dict(
+            checkpoint["model_state_dict"],
+            strict=True,
+        )
+
+        self.assertEqual(incompatible.missing_keys, [])
+        self.assertEqual(incompatible.unexpected_keys, [])
+        self.assertEqual(checkpoint["epoch"], 5)
+        self.assertEqual(model.count_parameters(), 59067)
 
     def test_out_of_range_signal_feature_indices_raise_value_error(self) -> None:
         """Reject signal feature indices that exceed input_dim."""
@@ -141,6 +228,17 @@ class ResidualAuxiliaryLCTRieszLSTMTest(unittest.TestCase):
             )
             self.assertEqual(residual_rows[0]["target_type"], "volatility_5")
             self.assertEqual(residual_rows[0]["use_lct_riesz"], "True")
+
+            evaluation_paths = run_evaluation(
+                config_path,
+                paths.best_model_path,
+            )
+            self.assertTrue(evaluation_paths.metrics_path.is_file())
+            evaluation_metrics = json.loads(
+                evaluation_paths.metrics_path.read_text(encoding="utf-8")
+            )
+            self.assertIn("rmse", evaluation_metrics)
+            self.assertIsNone(evaluation_metrics["directional_accuracy"])
 
     @staticmethod
     def _build_config(
