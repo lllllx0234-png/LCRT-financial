@@ -17,9 +17,6 @@ from torch.utils.data import DataLoader
 
 from evaluate import load_checkpoint
 from src.data.dataset import FinancialDataLoaders, create_dataloaders
-from src.models.residual_lct_lstm import (
-    ResidualAuxiliaryLCTRieszLSTMForecaster,
-)
 from src.utils.metrics import calculate_all_metrics
 from train import build_model, load_config, resolve_device, set_seed
 
@@ -85,7 +82,7 @@ def _restore_evaluation_scale(
 
 @torch.no_grad()
 def collect_residual_components(
-    model: ResidualAuxiliaryLCTRieszLSTMForecaster,
+    model: torch.nn.Module,
     loader: DataLoader,
     device: torch.device,
     target_scaler: Any = None,
@@ -495,7 +492,7 @@ def contribution_summary(
     constant_metrics: Mapping[str, Mapping[str, float]],
     constant_offsets: Mapping[str, float],
     permutation_summary: Mapping[str, Any],
-    source_paths: Mapping[str, str],
+    source_paths: Mapping[str, Any],
 ) -> Dict[str, Any]:
     """Summarize residual scale, sample effects, correlations, and metric deltas."""
     target = components["target"]
@@ -530,7 +527,8 @@ def contribution_summary(
                 "Full versus main-only measures whether correction changes the jointly trained model"
             ),
             "disallowed_inference": (
-                "This diagnostic cannot establish that LCT-Riesz outperforms Plain LSTM"
+                "This diagnostic cannot establish that the residual model "
+                "outperforms an independently trained Plain LSTM"
             ),
             "permutation_limit": (
                 "One shuffled correction is descriptive only; repeated random and circular distributions are required"
@@ -939,10 +937,15 @@ def run_diagnostic(
     data_config = config["data"]
     training_config = config["training"]
     model_config = config["model"]
-    if str(model_config.get("type", "")).lower() != (
-        "residual_auxiliary_lct_riesz_lstm"
-    ):
-        raise ValueError("Config must describe the residual auxiliary model.")
+    model_type = str(model_config.get("type", "")).strip().lower()
+    supported_model_types = {
+        "residual_auxiliary_lct_riesz_lstm",
+        "residual_auxiliary_signal_lstm",
+    }
+    if model_type not in supported_model_types:
+        raise ValueError(
+            "Config must describe a supported residual auxiliary model."
+        )
 
     seed = int(training_config["seed"])
     set_seed(seed)
@@ -963,7 +966,7 @@ def run_diagnostic(
     )
 
     model = build_model(model_config).to(device)
-    if not isinstance(model, ResidualAuxiliaryLCTRieszLSTMForecaster):
+    if not callable(getattr(model, "forward_components", None)):
         raise TypeError("Configured model does not expose residual components.")
     checkpoint = load_checkpoint(model, checkpoint_path, device)
     model.eval()
@@ -1021,13 +1024,18 @@ def run_diagnostic(
             "Shows whether correction affects the jointly trained model only."
         ),
         "plain_lstm_claim": (
-            "No Full/main-only comparison can establish that LCT-Riesz outperforms Plain LSTM."
+            "No Full/main-only comparison can establish that this residual "
+            "model outperforms an independently trained Plain LSTM."
         ),
         "permutation_claim": (
             "A single shuffle is descriptive; repeated random and circular distributions define robustness."
         ),
     }
     metrics_document = {
+        "model": {
+            "type": model_type,
+            "use_lct_riesz": bool(getattr(model, "use_lct_riesz", False)),
+        },
         "interpretation_boundaries": interpretation_boundaries,
         "verification": verification,
         "full": full_metrics,
@@ -1059,7 +1067,9 @@ def run_diagnostic(
         "checkpoint": str(Path(checkpoint_path)),
         "original_metrics": str(Path(original_metrics_path)),
         "original_predictions": str(Path(original_predictions_path)),
-        "checkpoint_epoch": str(checkpoint.get("epoch")),
+        "model_type": model_type,
+        "use_lct_riesz": bool(getattr(model, "use_lct_riesz", False)),
+        "checkpoint_epoch": checkpoint.get("epoch"),
         "device": str(device),
     }
     summary = contribution_summary(

@@ -159,7 +159,15 @@ def build_model(model_config: Mapping[str, Any]) -> nn.Module:
             lct_gate_init=float(model_config.get("lct_gate_init", 1.0)),
         )
 
-    if model_type == "residual_auxiliary_lct_riesz_lstm":
+    if model_type in {
+        "residual_auxiliary_lct_riesz_lstm",
+        "residual_auxiliary_signal_lstm",
+    }:
+        use_lct_riesz = bool(model_config.get("use_lct_riesz", True))
+        if model_type == "residual_auxiliary_signal_lstm" and use_lct_riesz:
+            raise ValueError(
+                "residual_auxiliary_signal_lstm requires use_lct_riesz=false."
+            )
         return ResidualAuxiliaryLCTRieszLSTMForecaster(
             input_dim=int(model_config["input_dim"]),
             hidden_dim=int(model_config["hidden_dim"]),
@@ -169,7 +177,7 @@ def build_model(model_config: Mapping[str, Any]) -> nn.Module:
             output_dim=int(model_config["output_dim"]),
             dropout=float(model_config["dropout"]),
             bidirectional=bool(model_config["bidirectional"]),
-            use_lct_riesz=bool(model_config.get("use_lct_riesz", True)),
+            use_lct_riesz=use_lct_riesz,
             spectral_hidden_dim=(
                 int(model_config["spectral_hidden_dim"])
                 if "spectral_hidden_dim" in model_config
