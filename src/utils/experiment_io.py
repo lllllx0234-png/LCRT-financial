@@ -432,6 +432,7 @@ def _infer_model_run_type(
 ) -> str:
     """Infer a deep model run type from names first, then model flags."""
     for run_type in (
+        "residual_temporal_signal_features",
         "residual_no_lct_signal_features",
         "residual_lct_signal_features",
         "residual_lct_features",

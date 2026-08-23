@@ -175,6 +175,13 @@ class ResidualAuxiliaryLCTRieszLSTMForecaster(nn.Module):
         """Predict targets using the main branch plus spectral correction."""
         return self.forward_components(x)["final_pred"]
 
+    def _enhance_auxiliary_input(
+        self,
+        auxiliary_input: torch.Tensor,
+    ) -> torch.Tensor:
+        """Apply the configured auxiliary enhancement without changing fusion."""
+        return self.lct_riesz(auxiliary_input)
+
     def forward_components(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
         """Return the genuine main and spectral prediction components."""
         if x.ndim != 3:
@@ -200,7 +207,7 @@ class ResidualAuxiliaryLCTRieszLSTMForecaster(nn.Module):
             index=self._signal_feature_index_tensor,
         )
         spectral_input = signal_features.transpose(1, 2).contiguous()
-        spectral_features = self.lct_riesz(spectral_input)
+        spectral_features = self._enhance_auxiliary_input(spectral_input)
         spectral_sequence = spectral_features.transpose(1, 2).contiguous()
         spectral_sequence = self.spectral_projection(spectral_sequence)
         spectral_repr = spectral_sequence.mean(dim=1)

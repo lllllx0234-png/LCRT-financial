@@ -1,4 +1,4 @@
-"""Diagnose a trained residual LCT-Riesz branch without updating weights."""
+"""Diagnose a trained residual auxiliary branch without updating weights."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ def _restore_evaluation_scale(
         restored[name] = target_scaler.inverse_transform(
             values[name].reshape(-1, 1)
         ).reshape(-1)
-    restored["spectral_delta"] = values["spectral_delta"] * scale
+    restored["auxiliary_delta"] = values["auxiliary_delta"] * scale
     restored["residual_correction"] = values["residual_correction"] * scale
     return restored
 
@@ -92,7 +92,7 @@ def collect_residual_components(
     collected = {
         "target": [],
         "main_pred": [],
-        "spectral_delta": [],
+        "auxiliary_delta": [],
         "residual_correction": [],
         "final_pred": [],
     }
@@ -105,12 +105,17 @@ def collect_residual_components(
         collected["target"].append(
             _flat_batch_tensor(targets, "target", batch_size)
         )
-        for name in (
-            "main_pred",
-            "spectral_delta",
-            "residual_correction",
-            "final_pred",
-        ):
+        auxiliary_delta = components.get("auxiliary_delta")
+        if auxiliary_delta is None:
+            auxiliary_delta = components.get("spectral_delta")
+        if auxiliary_delta is None:
+            raise KeyError(
+                "forward_components must return auxiliary_delta or spectral_delta."
+            )
+        collected["auxiliary_delta"].append(
+            _flat_batch_tensor(auxiliary_delta, "auxiliary_delta", batch_size)
+        )
+        for name in ("main_pred", "residual_correction", "final_pred"):
             collected[name].append(
                 _flat_batch_tensor(components[name], name, batch_size)
             )
@@ -131,6 +136,9 @@ def collect_residual_components(
     }
     flattened = _restore_evaluation_scale(flattened, target_scaler)
     flattened["residual_scale"] = np.asarray(scales[0], dtype=np.float64)
+    if bool(getattr(model, "use_lct_riesz", False)):
+        # Preserve the established LCT-specific name only for genuine LCT runs.
+        flattened["spectral_delta"] = flattened["auxiliary_delta"]
 
     expected_final = flattened["main_pred"] + flattened["residual_correction"]
     if not np.allclose(
@@ -497,7 +505,7 @@ def contribution_summary(
     """Summarize residual scale, sample effects, correlations, and metric deltas."""
     target = components["target"]
     main_pred = components["main_pred"]
-    spectral_delta = components["spectral_delta"]
+    auxiliary_delta = components["auxiliary_delta"]
     correction = components["residual_correction"]
     main_absolute_error = np.abs(target - main_pred)
     final_absolute_error = np.abs(target - components["final_pred"])
@@ -507,14 +515,14 @@ def contribution_summary(
     sample_count = int(target.size)
 
     correction_stats = distribution_statistics(correction)
-    spectral_stats = distribution_statistics(spectral_delta)
+    auxiliary_stats = distribution_statistics(auxiliary_delta)
     target_std = float(np.std(target, ddof=0))
     target_absolute_mean = float(np.mean(np.abs(target)))
     main_absolute_mean = float(np.mean(np.abs(main_pred)))
     main_residual = target - main_pred
     centered_correction = correction - np.mean(correction)
 
-    return {
+    summary = {
         "source": dict(source_paths),
         "interpretation_boundaries": {
             "main_only_definition": (
@@ -536,7 +544,7 @@ def contribution_summary(
         },
         "sample_count": sample_count,
         "residual_scale": float(components["residual_scale"]),
-        "spectral_delta": spectral_stats,
+        "auxiliary_delta": auxiliary_stats,
         "residual_correction": correction_stats,
         "demeaned_residual_correction": {
             **distribution_statistics(centered_correction),
@@ -572,8 +580,8 @@ def contribution_summary(
             "residual_correction_with_target_minus_main_pred": safe_correlation(
                 correction, main_residual
             ),
-            "spectral_delta_with_target_minus_main_pred": safe_correlation(
-                spectral_delta, main_residual
+            "auxiliary_delta_with_target_minus_main_pred": safe_correlation(
+                auxiliary_delta, main_residual
             ),
         },
         "full_minus_main_only": {
@@ -609,6 +617,15 @@ def contribution_summary(
             for permutation_type in ("random", "circular_shift")
         },
     }
+    if source_paths.get("auxiliary_type") == "lct_riesz":
+        # Keep historical LCT field names as aliases for genuine spectral runs.
+        summary["spectral_delta"] = auxiliary_stats
+        summary["correlations"][
+            "spectral_delta_with_target_minus_main_pred"
+        ] = summary["correlations"][
+            "auxiliary_delta_with_target_minus_main_pred"
+        ]
+    return summary
 
 
 def regime_rows(
@@ -703,7 +720,7 @@ def save_components_csv(
         {
             "target": target,
             "main_pred": main_pred,
-            "spectral_delta": components["spectral_delta"],
+            "auxiliary_delta": components["auxiliary_delta"],
             "residual_scale": np.full(
                 target.size,
                 float(components["residual_scale"]),
@@ -717,6 +734,8 @@ def save_components_csv(
             "correction_improved": np.abs(final_error) < np.abs(main_error),
         }
     )
+    if "spectral_delta" in components:
+        frame_data["spectral_delta"] = components["spectral_delta"]
     pd.DataFrame(frame_data).to_csv(path, index=False, encoding="utf-8-sig")
 
 
@@ -919,6 +938,29 @@ def create_extended_diagnostic_figures(
     _save_figure(figure, output_dir, "constant_bias_comparison")
 
 
+def residual_auxiliary_metadata(
+    model: torch.nn.Module,
+    model_type: str,
+) -> Dict[str, Any]:
+    """Describe the actual auxiliary mechanism without implying LCT usage."""
+    use_lct_riesz = bool(getattr(model, "use_lct_riesz", False))
+    if use_lct_riesz:
+        auxiliary_type = "lct_riesz"
+    else:
+        auxiliary_type = str(
+            getattr(model, "auxiliary_type", "identity_signal")
+        )
+    metadata: Dict[str, Any] = {
+        "type": model_type,
+        "auxiliary_type": auxiliary_type,
+        "use_lct_riesz": use_lct_riesz,
+    }
+    kernel_size = getattr(model, "temporal_kernel_size", None)
+    if kernel_size is not None:
+        metadata["kernel_size"] = int(kernel_size)
+    return metadata
+
+
 def run_diagnostic(
     config_path: PathLike = DEFAULT_CONFIG,
     checkpoint_path: PathLike = DEFAULT_CHECKPOINT,
@@ -941,6 +983,7 @@ def run_diagnostic(
     supported_model_types = {
         "residual_auxiliary_lct_riesz_lstm",
         "residual_auxiliary_signal_lstm",
+        "residual_auxiliary_temporal_lstm",
     }
     if model_type not in supported_model_types:
         raise ValueError(
@@ -970,6 +1013,7 @@ def run_diagnostic(
         raise TypeError("Configured model does not expose residual components.")
     checkpoint = load_checkpoint(model, checkpoint_path, device)
     model.eval()
+    model_metadata = residual_auxiliary_metadata(model, model_type)
 
     components = collect_residual_components(
         model,
@@ -1032,10 +1076,7 @@ def run_diagnostic(
         ),
     }
     metrics_document = {
-        "model": {
-            "type": model_type,
-            "use_lct_riesz": bool(getattr(model, "use_lct_riesz", False)),
-        },
+        "model": model_metadata,
         "interpretation_boundaries": interpretation_boundaries,
         "verification": verification,
         "full": full_metrics,
@@ -1068,10 +1109,13 @@ def run_diagnostic(
         "original_metrics": str(Path(original_metrics_path)),
         "original_predictions": str(Path(original_predictions_path)),
         "model_type": model_type,
-        "use_lct_riesz": bool(getattr(model, "use_lct_riesz", False)),
+        "auxiliary_type": model_metadata["auxiliary_type"],
+        "use_lct_riesz": model_metadata["use_lct_riesz"],
         "checkpoint_epoch": checkpoint.get("epoch"),
         "device": str(device),
     }
+    if "kernel_size" in model_metadata:
+        source_paths["kernel_size"] = model_metadata["kernel_size"]
     summary = contribution_summary(
         components,
         full_metrics,
@@ -1144,7 +1188,7 @@ def run_diagnostic(
 def main() -> None:
     """Parse CLI arguments and execute the no-training diagnostic."""
     parser = argparse.ArgumentParser(
-        description="Diagnose residual LCT-Riesz contribution from a checkpoint.",
+        description="Diagnose residual auxiliary contribution from a checkpoint.",
     )
     parser.add_argument(
         "--config",

@@ -18,6 +18,9 @@ from src.models.dual_branch_lct_lstm import DualBranchLCTRieszLSTMForecaster
 from src.models.lstm_forecaster import LCTRieszLSTMForecaster
 from src.models.residual_lct_lstm import ResidualAuxiliaryLCTRieszLSTMForecaster
 from src.models.tcn_forecaster import TCNForecaster
+from src.models.temporal_residual_lstm import (
+    ResidualAuxiliaryTemporalLSTMForecaster,
+)
 from src.models.transformer_forecaster import TransformerForecaster
 from src.utils.experiment_io import (
     ExperimentPaths,
@@ -192,6 +195,44 @@ def build_model(model_config: Mapping[str, Any]) -> nn.Module:
             riesz_gamma=float(model_config.get("riesz_gamma", 1.0)),
             learnable_gamma=bool(model_config.get("learnable_gamma", False)),
             lct_gate_init=float(model_config.get("lct_gate_init", 1.0)),
+        )
+
+    if model_type == "residual_auxiliary_temporal_lstm":
+        use_lct_riesz = bool(model_config.get("use_lct_riesz", False))
+        if use_lct_riesz:
+            raise ValueError(
+                "residual_auxiliary_temporal_lstm requires use_lct_riesz=false."
+            )
+        return ResidualAuxiliaryTemporalLSTMForecaster(
+            input_dim=int(model_config["input_dim"]),
+            hidden_dim=int(model_config["hidden_dim"]),
+            lstm_hidden_dim=int(model_config["lstm_hidden_dim"]),
+            signal_feature_indices=model_config["signal_feature_indices"],
+            num_layers=int(model_config["num_layers"]),
+            output_dim=int(model_config["output_dim"]),
+            dropout=float(model_config["dropout"]),
+            bidirectional=bool(model_config["bidirectional"]),
+            use_lct_riesz=use_lct_riesz,
+            spectral_hidden_dim=(
+                int(model_config["spectral_hidden_dim"])
+                if "spectral_hidden_dim" in model_config
+                else None
+            ),
+            residual_scale_init=float(
+                model_config.get("residual_scale_init", 0.0)
+            ),
+            temporal_kernel_size=int(model_config["temporal_kernel_size"]),
+            temporal_bias=bool(model_config["temporal_bias"]),
+            temporal_shared_across_channels=bool(
+                model_config["temporal_shared_across_channels"]
+            ),
+            temporal_causal_left_padding=int(
+                model_config["temporal_causal_left_padding"]
+            ),
+            temporal_activation=str(model_config["temporal_activation"]),
+            temporal_residual_connection=bool(
+                model_config["temporal_residual_connection"]
+            ),
         )
 
     raise ValueError("Unsupported model.type: {}".format(model_type))
