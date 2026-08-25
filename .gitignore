@@ -36,6 +36,7 @@ experiments/*/outputs/**
 
 # Generated bottom-level numerical validation artifacts
 experiments/numerical_validation/lct_riesz/**
+experiments/numerical_validation/strict_lcrt/**
 
 # Reproducible residual-contribution diagnostic artifacts
 experiments/lstm/diagnostics/
